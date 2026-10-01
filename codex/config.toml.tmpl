@@ -1,0 +1,11 @@
+# 작업 완료 마커([AGENT-DONE]) 감지 시 세션 자동 종료 — ~/.claude/hooks/agent-done.js 참조
+# 이 파일은 install.ps1 이 config.toml.tmpl 에서 생성한다. 직접 고치지 말고 템플릿을 고친다.
+notify = ["node", "{{CLAUDE_HOME_FWD}}/hooks/agent-done.js", "--codex"]
+
+{{TRUSTED_PROJECTS_TOML}}
+
+[tui.model_availability_nux]
+gpt-6-astra = 4
+
+[windows]
+sandbox = "unelevated"

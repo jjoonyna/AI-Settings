@@ -1,0 +1,31 @@
+# 교차 검수 프로필 — Claude 에서 진행한 대규모 변경을 독립 검수한다
+# 사용법: codex --profile deep-review
+#
+# 모델: gpt-6-astra (Codex 계열 최상위)
+#
+# 왜 다른 벤더인가:
+#   같은 모델 계열이 자기 작업을 검수하면 같은 사각지대를 공유한다.
+#   벤더를 바꾸면 다른 관점의 검출이 가능하다.
+#   Claude 쪽에는 대응물이 없는 Codex 전용 프로필이다.
+#
+# reasoning 은 astra 상한을 그대로 지킨다 (low 기본 / medium 상한).
+#   용도와 무관하게 astra 에는 이 상한이 적용된다.
+#   큰 diff 는 입력 토큰이 이미 크므로 reasoning 까지 올리면 비용이 급증한다.
+#
+# 부족하면 sol 로 이어받는다:
+#   codex --profile deep-review -m gpt-6.1-sol
+#   astra 가 전략적 판단과 중대 결함을, sol 이 나머지 훑기를 담당한다.
+#   이어받을 때는 astra 가 어디까지 봤는지를 .agent-shared.md 에 남긴다.
+#
+# 사용 시점: 상시가 아니라 규모가 매우 클 때만이다.
+#   일상 리뷰는 --profile work 의 부모가 직접 하거나 --profile review 를 쓴다.
+#
+# -a 계보 확인: hotfix/v*-a 브랜치나 v*-a 태그가 본선에 섞여 들어갔는지
+#   함께 점검한다. 이 계보는 다른 납품업체용 커스터마이즈로 본선에 병합되면 안 된다.
+
+model = "gpt-6-astra"
+model_reasoning_effort = "low"
+
+# 검수는 수정하지 않는다. 발견 사항만 보고하고 수정은 원래 작업 주체가 한다.
+sandbox_mode = "read-only"
+approval_policy = "on-request"

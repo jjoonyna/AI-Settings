@@ -1,0 +1,23 @@
+# 머신별 생성 파일 (install.ps1 이 .tmpl 에서 만든다)
+nvim/lua/config/local.lua
+
+# 비밀·런타임 (실수로 복사되더라도 추적 금지)
+*.credentials.json
+auth.json
+*.key
+history.jsonl
+installed_plugins.json
+known_marketplaces.json
+
+# 로컬 작업 상태
+.agent-shared.md
+worktrees/
+
+# nvim 런타임 (nvim/.gitignore 의 LazyVim 기본 항목과 동일)
+nvim/.tests
+nvim/debug
+nvim/.repro
+nvim/data
+nvim/*.log
+nvim/backups/
+nvim/**/*.bak*

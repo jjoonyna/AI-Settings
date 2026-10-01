@@ -1,0 +1,12 @@
+-- 머신 종속 설정. install.ps1 이 local.lua.tmpl 에서 생성한다 — 직접 고치면 다음 설치에 덮어쓰인다.
+-- 빈 문자열은 nil 로 취급한다.
+local function nil_or(s) if s == nil or s == "" then return nil end return s end
+
+return {
+  jdk21  = nil_or("{{JDK21}}"),
+  python = nil_or("{{PYTHON}}"),
+  projects = {
+    rbm  = { root = nil_or("{{RBM_ROOT}}"),  kind = "java" },
+    docs = { root = nil_or("{{DOCS_ROOT}}"), kind = "docs" },
+  },
+}
