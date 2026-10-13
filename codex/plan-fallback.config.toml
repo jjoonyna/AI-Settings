@@ -18,6 +18,14 @@
 model = "gpt-6.1-sol"
 model_reasoning_effort = "medium"
 
-# 계획 단계는 파일을 수정하지 않는다.
-sandbox_mode = "read-only"
+# 계획 단계는 코드를 수정하지 않는다. 문서(docs/, .agent-shared.md)만 승인 없이 쓴다.
+#   plan.config.toml 과 같은 권한 프로필이다(sandbox_mode 와 병용 금지).
+default_permissions = "plan-docs"
 approval_policy = "on-request"
+
+[permissions.plan-docs]
+extends = ":read-only"
+
+[permissions.plan-docs.filesystem.":workspace_roots"]
+"docs" = "write"
+".agent-shared.md" = "write"

@@ -1,0 +1,23 @@
+# 계획 폴백 프로필 — astra 가 사용량 한도에 걸렸을 때 계획을 이어받는다
+# 사용법: codex --profile plan-fallback
+#
+# 모델: gpt-6.1-sol (priority 1, "Latest workhorse model for coding and everyday work")
+#   Claude 의 planner-fallback(Opus 5)에 대응한다.
+#
+# 이어받을 때 반드시:
+#   1. 설계·계획 문서 전문과 .agent-shared.md 를 읽는다 (요약만 읽고 시작하지 않는다)
+#   2. 문서의 `상태:` 와 `## 미결 사항` 으로 이어갈 지점을 파악해 사용자에게 확인한다
+#   3. 이미 확정된 결정을 다시 묻지 않는다 (되묻는 것은 인수인계 실패다)
+#   4. 앞선 결정을 뒤집지 않는다. 모순 발견 시 조용히 고치지 말고 보고한다
+#   5. 문서에 남지 않은 맥락에 의존하는 부분이면 작업 전에 사용자에게 경고한다
+#   6. 이 프로필이 작성한 절은 문서에 명기한다
+#      예: 작성: ... (§4~ GPT-6.1-Sol — astra 사용량 한도로 폴백)
+#
+# 복잡도 경고 조건과 대안 제시 방법은 ~/.codex/AGENTS.md §5 참조.
+
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
+
+# 계획 단계는 파일을 수정하지 않는다.
+sandbox_mode = "read-only"
+approval_policy = "on-request"
