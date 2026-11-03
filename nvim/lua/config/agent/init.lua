@@ -83,6 +83,10 @@ function M.setup()
 
   local map = vim.keymap.set
   map("n", "<leader>aa", M.menu.open, { desc = "에이전트 실행 (메뉴)" })
+  map("n", "<leader>ar", function() M.menu.open('resume') end, { desc = "에이전트 세션 선택 재개" })
+  map("n", "<leader>ac", function() M.menu.open('continue') end, { desc = "최근 에이전트 세션 재개" })
+  vim.api.nvim_create_user_command('AgentResume', function() M.menu.open('resume') end, { desc = '세션 선택 재개' })
+  vim.api.nvim_create_user_command('AgentContinue', function() M.menu.open('continue') end, { desc = '최근 세션 재개' })
   map("n", "<leader>al", M.list, { desc = "에이전트 터미널 목록·이동" })
   map("n", "<leader>as", function()
     M.send(nil)

@@ -1,5 +1,7 @@
 # 작업 완료 마커([AGENT-DONE]) 감지 시 세션 자동 종료 — ~/.claude/hooks/agent-done.js 참조
 # 이전 버전 호환 템플릿. 새 설치는 scripts/install-runtime.mjs에서 사용자 설정을 병합한다.
+approval_policy = "on-request"
+approvals_reviewer = "auto_review"
 notify = ["node", "{{CLAUDE_HOME_FWD}}/hooks/agent-done.js", "--codex"]
 
 {{TRUSTED_PROJECTS_TOML}}

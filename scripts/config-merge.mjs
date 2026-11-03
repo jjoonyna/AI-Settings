@@ -25,33 +25,82 @@ export function statements(text) {
   return result;
 }
 
+// TOML key paths retain literal dots within quoted segments.
+function keyPath(text, terminator) {
+  let i = 0; const parts = [];
+  const space = () => { while (text[i] === ' ' || text[i] === '\t') i++; };
+  while (true) {
+    space(); let value = '';
+    if (text[i] === "'" || text[i] === '"') {
+      const quote = text[i++]; let closed = false;
+      while (i < text.length) {
+        const c = text[i++];
+        if (c === quote) { closed = true; break; }
+        if (c === '\n' || c === '\r' || c.charCodeAt(0) < 0x20) throw new Error('Invalid TOML key');
+        if (c !== '\\' || quote === "'") { value += c; continue; }
+        const escape = text[i++];
+        const simple = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', '"': '"', '\\': '\\' };
+        if (Object.hasOwn(simple, escape)) { value += simple[escape]; continue; }
+        if (escape !== 'u' && escape !== 'U') throw new Error('Unsupported TOML key escape');
+        const length = escape === 'u' ? 4 : 8, hex = text.slice(i, i + length);
+        if (!new RegExp('^[0-9a-fA-F]{' + length + '}$').test(hex)) throw new Error('Invalid TOML key escape');
+        const cp = parseInt(hex, 16);
+        if (cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff)) throw new Error('Invalid TOML key codepoint');
+        value += String.fromCodePoint(cp); i += length;
+      }
+      if (!closed) throw new Error('Unterminated TOML key');
+    } else {
+      const m = text.slice(i).match(/^[A-Za-z0-9_-]+/);
+      if (!m) throw new Error('Unsupported TOML key');
+      value = m[0]; i += value.length;
+    }
+    parts.push(value); space();
+    if (text[i] === terminator || (terminator === '' && i === text.length)) return { parts, end: i };
+    if (text[i] !== '.') throw new Error('Invalid TOML key path');
+    i++;
+  }
+}
+const canonical = parts => parts.map(p => /^[A-Za-z0-9_-]+$/.test(p) ? p : JSON.stringify(p)).join('.');
+function parseRow(row) {
+  const trimmed = row.trimStart();
+  if (!trimmed || trimmed[0] === '#') return null;
+  if (trimmed.startsWith('[[')) return { array: true };
+  if (trimmed[0] === '[') {
+    const parsed = keyPath(trimmed.slice(1), ']');
+    if (!/^\]\s*(?:#.*)?$/.test(trimmed.slice(parsed.end + 1))) throw new Error('Invalid TOML table');
+    return { header: parsed.parts };
+  }
+  const parsed = keyPath(trimmed, '=');
+  return { parts: parsed.parts, lhs: trimmed.slice(0, parsed.end).trimEnd(), value: trimmed.slice(parsed.end + 1).trim() };
+}
+
 export function mergeToml(text, managed) {
-  const rows = statements(text); let table = '';
-  const seen = new Set(); const changes = new Map(Object.entries(managed));
+  const rows = statements(text); let table = [], array = false;
+  const seen = new Set(); const changes = new Map();
+  for (const [key, value] of Object.entries(managed)) changes.set(canonical(keyPath(key, '').parts), value);
   const output = rows.map(row => {
-    const header = row.match(/^\s*\[([^\[\]\n]+)\]\s*(?:#.*)?$/);
-    if (header) { table = header[1].trim(); return row; }
-    if (/^\s*\[\[/.test(row)) { table = '__array_table__'; return row; }
-    const assignment = row.match(/^\s*([\w-]+)\s*=/);
-    if (!assignment) return row;
-    const key = (table ? table + '.' : '') + assignment[1];
+    const parsed = parseRow(row);
+    if (!parsed) return row;
+    if (parsed.array) { array = true; return row; }
+    if (parsed.header) { table = parsed.header; array = false; return row; }
+    if (array) return row;
+    const key = canonical([...table, ...parsed.parts]);
+    if (parsed.value.startsWith('{') && [...changes.keys()].some(k => k.startsWith(key + '.'))) throw new Error('Inline TOML table overlaps managed keys: ' + key);
     if (!changes.has(key)) return row;
     if (seen.has(key)) throw new Error('Duplicate TOML key: ' + key);
     seen.add(key);
-    return changes.get(key) === null ? '' : `${assignment[1]} = ${changes.get(key)}`;
+    return changes.get(key) === null ? '' : `${parsed.lhs} = ${changes.get(key)}`;
   });
   const groups = new Map();
   for (const [key, value] of changes) {
-    if (seen.has(key)) continue;
-    if (value === null) continue;
-    const dot = key.lastIndexOf('.'); const section = dot < 0 ? '' : key.slice(0, dot);
-    const name = dot < 0 ? key : key.slice(dot + 1);
+    if (seen.has(key) || value === null) continue;
+    const parts = keyPath(key, '').parts, section = canonical(parts.slice(0, -1)), name = canonical(parts.slice(-1));
     if (!groups.has(section)) groups.set(section, []);
     groups.get(section).push(`${name} = ${value}`);
   }
   for (const [section, values] of groups) {
     if (!section) { output.unshift(...values, ''); continue; }
-    const index = output.findIndex(row => row.match(/^\s*\[([^\[\]\n]+)\]\s*(?:#.*)?$/)?.[1].trim() === section);
+    const index = output.findIndex(row => { const p = parseRow(row); return p?.header && canonical(p.header) === section; });
     if (index >= 0) output.splice(index + 1, 0, ...values);
     else output.push('', `[${section}]`, ...values);
   }
@@ -59,13 +108,13 @@ export function mergeToml(text, managed) {
 }
 
 export function tomlValues(text) {
-  let table = ''; const values = {};
+  let table = [], array = false; const values = {};
   for (const row of statements(text)) {
-    const header = row.match(/^\s*\[([^\[\]\n]+)\]\s*(?:#.*)?$/);
-    if (header) { table = header[1].trim(); continue; }
-    if (/^\s*\[\[/.test(row)) { table = '__array_table__'; continue; }
-    const item = row.match(/^\s*([\w-]+)\s*=\s*([\s\S]*)$/);
-    if (item) values[(table ? table + '.' : '') + item[1]] = item[2].trim();
+    const parsed = parseRow(row);
+    if (!parsed) continue;
+    if (parsed.array) { array = true; continue; }
+    if (parsed.header) { table = parsed.header; array = false; continue; }
+    if (!array) values[canonical([...table, ...parsed.parts])] = parsed.value;
   }
   return values;
 }

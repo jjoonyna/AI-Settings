@@ -26,11 +26,13 @@ git clone https://github.com/jjoonyna/AI-Settings.git
 
 설치 위치는 기본적으로 `~/.ai-settings`, `~/.codex`, `~/.claude`와 `%LOCALAPPDATA%/nvim`입니다. `-HomeDir`·`-NvimDir`로 격리 설치할 수 있습니다. `-TrustedProjects`, `-Jdk21`, `-Python`, `-RbmRoot`, `-DocsRoot`는 기존 옵션을 유지합니다. `-SkipTools`는 오프라인 진단용으로 외부 스킬·Python 의존성 설치를 건너뛰며, `-SkipPlugins`는 Claude 플러그인 설치를 건너뜁니다.
 
+Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 `auto_review`로 설정합니다. 계획 문서 전용 권한과 리뷰 읽기 전용 샌드박스는 유지합니다.
+
 재설치는 관리 항목을 새 규칙으로 갱신하고 개인 MCP·플러그인·권한·지침·PC별 경로·인증·대화 기록은 보존합니다. 같은 관리 항목의 충돌은 배포 규칙을 우선합니다. 기존 폴더 링크는 독립 복사본으로 전환합니다. 백업·소유 파일·외부 도구 버전은 `~/.ai-settings`에 기록합니다. 실패하면 설정 파일 변경을 복구하며 다운로드 캐시·Python 환경은 남을 수 있습니다.
 
 ## 사용
 
-Neovim의 `<leader>aa`는 계획 세션을, `<leader>an` 또는 `:AgentNew`는 화면을 분리할 수 있는 유지 계획 세션을 엽니다. 벤더·모델·주제를 선택합니다. 기본 모델은 Opus·GPT-6.1 Sol입니다.
+`<leader>aa` / `:Agent`에서 새 세션, 선택 재개, 최근 재개를 고릅니다. `<leader>ar` / `:AgentResume`은 선택 재개, `<leader>ac` / `:AgentContinue`는 최근 재개입니다. `<leader>an` / `:AgentNew`에서도 같은 방식을 선택합니다. 재개는 현재 폴더의 CLI 기본 선택기 또는 최근 세션을 사용하며 모델과 제목을 묻지 않습니다. 저장된 이름을 미리 알 수 없어 허브 화면에는 임시 이름이 표시되며 CLI 저장 이름은 바꾸지 않습니다. 재개한 세션에서 위임할 때 정확한 세션 ID의 저장 모델과 규약에 맞는 저장 이름의 역할을 확인하며, 확인할 수 없는 정보는 선택 후 위임을 다시 요청합니다.
 
 계획 세션이 난이도 → 작업량 → 예상 사용량 순서로 작업 모델을 정해 위임합니다. 일반 실행은 Sonnet·Terra, 명확한 작은 작업은 Haiku·Luna를 우선 검토합니다. 동일 모델도 사용할 수 있으며 자동 배정 상한은 호출 모델입니다. 모델 목록과 등급은 `runtime/models.json`, 운영 정본은 `runtime/POLICY.md`입니다. 설치 후에는 같은 파일이 `~/.ai-settings`에 배치됩니다.
 

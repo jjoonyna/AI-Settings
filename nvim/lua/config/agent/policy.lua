@@ -56,6 +56,13 @@ function M.environment(extra)
   end
   return env
 end
+function M.resume_command(agent, mode)
+  if mode ~= 'resume' and mode ~= 'continue' then return nil end
+  if agent == 'codex' then return mode == 'continue' and { 'codex', 'resume', '--last' } or { 'codex', 'resume' } end
+  if agent == 'claude' and M.installation().mode ~= 'codex' then
+    return { 'claude', mode == 'continue' and '--continue' or '--resume' }
+  end
+end
 function M.command(agent, role, model, title)
   model = model or M.catalog().defaults[agent]
   if agent == 'claude' then

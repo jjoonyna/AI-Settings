@@ -20,8 +20,6 @@ end
 function M.receive(o)
   o = vim.deepcopy(o or {})
   o.session = o.session or 'work'; o.agent = o.agent or 'claude'
-  local model, error = policy.validate(o)
-  if not model then return 'FAIL: ' .. error end
   if not o.name or not o.goal or not o.scope or not o.validation or not o.prompt then return 'FAIL: name·goal·scope·validation·prompt가 필요합니다' end
   if not o.spec_doc or not o.plan_doc then return 'FAIL: spec_doc·plan_doc가 필요합니다' end
   for _, p in ipairs({ o.spec_doc, o.plan_doc }) do if vim.fn.filereadable(p) ~= 1 then return 'FAIL: 문서 없음 ' .. p end end
@@ -35,7 +33,36 @@ function M.receive(o)
   end
   if not o.parent_id or o.parent_server == '' then return 'FAIL: parent_id·parent_server로 보고 대상을 지정하세요' end
   local parent = terminal.registry[tonumber(o.parent_id)]
-  if o.parent_server ~= vim.v.servername or not parent or parent.model ~= o.parent_model then return 'FAIL: 실제 호출 세션과 parent_model·parent_id·parent_server가 일치해야 합니다' end
+  if o.parent_server ~= vim.v.servername or not parent then return 'FAIL: 부모 세션을 찾을 수 없습니다' end
+  if parent.resume then
+    local vendor = parent.agent == 'Codex' and 'codex' or 'claude'
+    local metadata = type(o.resolved_session) == 'table' and o.resolved_session or {}
+    local resolved = metadata.model and policy.model(metadata.model)
+    local current_model = resolved and resolved.vendor == vendor and resolved.id or parent.confirmed_model
+    local current_role = ({ plan = true, work = true, review = true })[metadata.role] and metadata.role or parent.confirmed_role
+    if not current_model or not current_role then
+      local choices, prompt, field
+      if not current_role then
+        choices = { { id = 'plan', label = '계획' }, { id = 'work', label = '작업' }, { id = 'review', label = '리뷰' } }
+        prompt, field = '현재 재개 세션의 역할 확인', 'confirmed_role'
+      else
+        choices = vim.tbl_filter(function(m) return m.vendor == vendor end, policy.catalog().models)
+        prompt, field = '현재 재개 세션의 모델 확인', 'confirmed_model'
+      end
+      vim.schedule(function()
+        vim.ui.select(choices, { prompt = prompt .. ' (선택 후 위임 재시도)', format_item = function(m) return m.label end }, function(choice)
+          if choice then parent[field] = choice.id; vim.notify('확인됨: 위임을 다시 요청하세요') end
+        end)
+      end)
+      return 'PENDING: 현재 세션 정보를 확인한 뒤 위임을 다시 요청하세요'
+    end
+    parent.model, parent.role = current_model, current_role
+    parent.confirmed_model, parent.confirmed_role = nil, nil
+    o.parent_model, o.parent_agent = current_model, vendor
+  end
+  local model, error = policy.validate(o)
+  if not model then return 'FAIL: ' .. error end
+  if parent.model ~= o.parent_model then return 'FAIL: 실제 호출 세션과 parent_model·parent_id·parent_server가 일치해야 합니다' end
   if parent.role == 'review' and o.session ~= 'review' then return 'FAIL: 리뷰 세션은 수정 가능한 작업을 위임할 수 없습니다' end
   local title = policy.title(o.session, o.name)
   local cmd = policy.command(o.agent, o.session, model.id, title)

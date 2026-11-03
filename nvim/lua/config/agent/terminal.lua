@@ -58,10 +58,20 @@ function M.spawn(opts)
     vim.cmd((opts.split or "vsplit") .. " | enew")
   end
 
+  local env = vim.tbl_extend('force', {}, opts.env or {})
+  if opts.resume then
+    env = vim.fn.environ()
+    for key in pairs(env) do
+      if key:match('^AGENT_SESSION_') or key:match('^AGENT_PARENT_') then env[key] = nil end
+    end
+    env = vim.tbl_extend('force', env, opts.env or {})
+  end
+  env.AGENT_SESSION_ID = tostring(next_id + 1)
   local ok, chan = pcall(vim.fn.jobstart, opts.cmd, {
     term = true,
     cwd = opts.cwd,
-    env = vim.tbl_extend('force', {}, opts.env or {}, { AGENT_SESSION_ID = tostring(next_id + 1) }),
+    env = env,
+    clear_env = opts.resume and true or false,
     on_exit = function(id)
       -- 자동 종료 요청(M.done)으로 끝난 세션은 창까지 닫아 화면에 남기지 않는다.
       local e = M.entry_by_chan(id)
@@ -85,6 +95,7 @@ function M.spawn(opts)
     id = next_id,
     name = opts.name or make_name(opts.agent or "agent", opts.branch),
     role = opts.role,
+    resume = opts.resume,
     model = opts.model,
     topic = opts.topic,
     agent = opts.agent,
