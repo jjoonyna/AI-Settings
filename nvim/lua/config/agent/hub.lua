@@ -74,7 +74,7 @@ function M.snapshot()
   local entries = {}
   for _, e in ipairs(require('config.agent.terminal').entries()) do
     entries[#entries + 1] = { id = e.id, name = e.name, agent = e.agent or '에이전트', cwd = e.cwd,
-      branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf }
+      branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf, role = e.role, model = e.model }
   end
   return { version = 1, instance = M.id, pid = vim.fn.getpid(), server = vim.v.servername,
     managed = M.managed, window = M.window,
@@ -164,9 +164,14 @@ function M.setup()
   if vim.v.servername == '' then vim.fn.serverstart('\\\\.\\pipe\\agent-hub-' .. M.id) end
   local T = require('config.agent.terminal')
   require('config.agent.bridge').install(T)
+  require('config.agent.handoff')
   for _, entry in ipairs(T.entries()) do if not entry.note then M.note(entry) end end
   require('config.agent.plan_preview').setup()
   local group = vim.api.nvim_create_augroup('agent_hub_registry', { clear = true })
+  vim.api.nvim_create_autocmd('BufEnter', { group = group, callback = function()
+    local title = T.name_of(vim.api.nvim_get_current_buf())
+    if title then vim.opt.title = true; vim.opt.titlestring = title:gsub('%%', '%%%%') end
+  end })
   vim.api.nvim_create_autocmd({ 'UIEnter', 'UILeave', 'TermClose' }, {
     group = group, callback = function() vim.schedule(M.publish) end,
   })

@@ -21,7 +21,7 @@ function M.attach(instance, callback)
   if (instance.uis or 0) > 0 then
     vim.list_extend(cmd, { 'focus-tab', '--target', '0' })
   else
-    vim.list_extend(cmd, { 'new-tab', '--title', '작업 ' .. instance.instance,
+    vim.list_extend(cmd, { 'new-tab', '--title', (instance.entries and instance.entries[1] and instance.entries[1].name) or ('계획 | ' .. instance.instance),
       vim.v.progpath, '--server', instance.server, '--remote-ui' })
   end
   vim.system(cmd, { text = true, timeout = 5000 }, vim.schedule_wrap(function(result)
@@ -48,7 +48,7 @@ function M.context(entry, opts)
     '자신의 진행 기록: ' .. entry.note,
     '먼저 공유 폴더의 README.md와 다른 에이전트 기록, 작업 폴더의 .agent-shared.md가 있으면 읽으세요.',
     '자기 기록에 목표·확정 결정·진행 결과·변경 파일·미해결 항목을 한국어로 갱신하세요. 다른 에이전트 기록은 덮어쓰지 마세요.',
-    '새 계획 문서를 작성하면 v:lua.AgentPlanPreview(문서의 절대 경로)로 검토 창을 열 수 있습니다.',
+    '사용자 확인이 필요할 때만 docs/user-review/<주제>.md를 AgentPlanPreview로 열고 Ctrl+D로 닫습니다. spec·plan 자체와 완료 상태는 자동 표시하지 않습니다.',
     opts.plan_doc and ('설계·계획 문서: ' .. opts.plan_doc) or '',
     opts.prompt or '구체적인 작업 지시가 없으면 공유 기록을 확인하고 사용자 지시를 기다리세요.',
   }, '\n')
@@ -63,16 +63,21 @@ function M.consume(path)
   local response = { ok = false }
   local ok, err = pcall(function()
     local menu = require('config.agent.menu')
-    local cmd = request.test_cmd or menu.cmd_for(request.agent, request.session)
+    local policy = require('config.agent.policy')
+    local title = policy.title(request.session, request.name)
+    local cmd = request.test_cmd or menu.cmd_for(request.agent, request.session, request.model, title)
     assert(cmd and vim.fn.executable(cmd[1]) == 1, '에이전트 실행 파일을 찾을 수 없습니다')
     local git = vim.system({ 'git', '-C', request.cwd, 'branch', '--show-current' }, { text = true }):wait(2000)
     local branch = git.code == 0 and vim.trim(git.stdout or '') or nil
     local id, why = require('config.agent.terminal').spawn({
       cmd = cmd, cwd = request.cwd, branch = branch,
-      env = { AGENT_SESSION_ROLE = request.session }, -- Stop 훅은 work 세션만 닫는다
+      env = { AGENT_SESSION_ROLE = request.session, AGENT_SESSION_MODEL = request.model, AGENT_SESSION_VENDOR = request.agent,
+        AGENT_SESSION_TITLE = title, AI_SETTINGS_HOME = policy.installation().runtime, IMPECCABLE_LIVE_COPY_AGENT = 'chat' },
       agent = request.agent == 'codex' and 'Codex' or (request.test_cmd and '테스트' or 'Claude'),
-      name = request.name, task_id = request.task_id,
-      initial_prompt = not request.test_cmd and function(entry) return M.context(entry, request) end or nil,
+      name = request.test_cmd and request.name or title, task_id = request.task_id,
+      role = request.session, model = request.model, topic = request.name,
+      session_name = not request.test_cmd and title or nil,
+      briefing = not request.test_cmd and M.context({ name = title, cwd = request.cwd, task_id = request.task_id, note = '공유 기록을 확인하세요' }, request) or nil,
     })
     assert(id, why)
     response = { ok = true, id = id, instance = hub.id }
@@ -93,6 +98,12 @@ function M.new(opts, callback)
   if vim.uv.fs_stat(path) then return '이미 등록된 요청: ' .. id end
   local agent = opts.agent or 'claude'
   local session = opts.session or 'plan'
+  local model = opts.model or require('config.agent.policy').catalog().defaults[agent]
+  if not opts.test_cmd then
+    if session ~= 'plan' then return '실패: 작업·리뷰는 AgentHandoff로 모델과 부모를 지정하세요' end
+    local selected, why = require('config.agent.policy').validate({ agent = agent, session = session, model = model })
+    if not selected then return '실패: ' .. why end
+  end
   if not opts.test_cmd and not require('config.agent.menu').cmd_for(agent, session) then
     return '실패: 알 수 없는 에이전트 또는 세션 종류'
   end
@@ -100,7 +111,7 @@ function M.new(opts, callback)
   local request = { action = 'server', instance = id, root = hub.root(), cwd = cwd,
     window = 'agent-hub-' .. id, server = '\\\\.\\pipe\\agent-hub-' .. id,
     init = vim.fn.stdpath('config') .. '/init.lua', nvim = vim.v.progpath,
-    agent = agent, session = session, name = opts.name or task.name, task_id = task.id,
+    agent = agent, session = session, model = model, name = opts.name or task.name, task_id = task.id,
     prompt = opts.prompt, plan_doc = opts.plan_doc, test_cmd = opts.test_cmd }
   vim.fn.mkdir(vim.fn.fnamemodify(path, ':h'), 'p')
   local fd, err = vim.uv.fs_open(path, 'wx', 384)
@@ -132,19 +143,13 @@ end
 
 function M.menu(defaults)
   defaults = defaults or {}
-  local agents = require('config.agent.menu').AGENTS
-  vim.ui.select(agents, { prompt = '새 유지 세션의 에이전트', format_item = function(a) return a.label end }, function(agent)
-    if not agent then return end
-    vim.ui.select({ '계획', '작업' }, { prompt = '세션 종류' }, function(mode)
-      if not mode then return end
-      vim.ui.input({ prompt = '작업 폴더: ', default = defaults.cwd or vim.fn.getcwd(), completion = 'dir' }, function(cwd)
-        if not cwd then return end
-        vim.ui.input({ prompt = '작업 이름: ', default = defaults.name }, function(name)
-          if not name or vim.trim(name) == '' then return end
-          local result = M.new({ agent = agent.key, session = mode == '계획' and 'plan' or 'work', cwd = cwd, name = vim.trim(name), task_id = defaults.task_id })
-          report(result, result:find('실패:', 1, true) ~= nil)
-        end)
-      end)
+  require('config.agent.menu').pick(function(opts)
+    opts.task_id = defaults.task_id
+    vim.ui.input({ prompt = '작업 폴더: ', default = defaults.cwd or opts.cwd, completion = 'dir' }, function(cwd)
+      if not cwd then return end
+      opts.cwd = cwd
+      local result = M.new(opts)
+      report(result, result:find('실패:', 1, true) ~= nil)
     end)
   end)
 end

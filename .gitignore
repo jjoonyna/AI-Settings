@@ -12,6 +12,16 @@ known_marketplaces.json
 # 로컬 작업 상태
 .agent-shared.md
 worktrees/
+.tools/
+/nvim.log
+
+# 내부 문서는 루트 docs/에 모아 로컬 유지
+/docs/
+# 기존 사용자 검토 문서 경로 호환
+/user-review/
+# 각 프로젝트 루트에 생성되는 AI 지침 (배포 원본은 제외하지 않음)
+/AGENTS.md
+/CLAUDE.md
 
 # nvim 런타임 (nvim/.gitignore 의 LazyVim 기본 항목과 동일)
 nvim/.tests

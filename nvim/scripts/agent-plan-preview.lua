@@ -7,7 +7,7 @@ vim.opt.linebreak = true
 vim.opt.breakindent = true
 vim.opt.termguicolors = true
 vim.opt.laststatus = 0
-vim.opt.winbar = ' 계획 검토 · 읽기 전용 · Ctrl+d 닫기 '
+vim.opt.winbar = ' 사용자 검토 · 읽기 전용 · Ctrl+d 닫기 · 닫기는 승인 아님 '
 vim.opt.rtp:append(vim.fn.stdpath('data') .. '/lazy/catppuccin')
 pcall(function() require('catppuccin').setup({ flavour = 'mocha' }); vim.cmd.colorscheme('catppuccin-mocha') end)
 vim.cmd('filetype plugin indent on')

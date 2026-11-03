@@ -13,12 +13,14 @@ function M.install(T)
     if name == '' or name:find('[%c]') then return false, '이름은 공백만 있거나 제어 문자를 포함할 수 없습니다' end
     entry.name = name
     vim.b[entry.buf].agent_name = name
+    if vim.api.nvim_get_current_buf() == entry.buf then vim.opt.title = true; vim.opt.titlestring = name:gsub('%%', '%%%%') end
     hub.publish()
     vim.cmd('redrawstatus')
     return true
   end
   function T.spawn(opts)
     local copy = vim.tbl_extend('force', {}, opts)
+    copy.env = require('config.agent.policy').environment(opts.env)
     local descriptor = { id = hub.uid(), name = opts.name or ((opts.agent or '에이전트') .. ' 작업'),
       cwd = opts.cwd, task_id = opts.task_id }
     hub.note(descriptor)
@@ -34,6 +36,15 @@ function M.install(T)
     local entry = T.registry[id]
     entry.task_id, entry.note = descriptor.task_id, descriptor.note
     if opts.name then entry.name = opts.name; vim.b[entry.buf].agent_name = opts.name end
+    if opts.name then vim.opt.title = true; vim.opt.titlestring = opts.name:gsub('%%', '%%%%') end
+    if opts.session_name then
+      local pattern = opts.agent == 'Codex' and '›' or '❯'
+      T.wait_ready(id, { pattern = pattern }, function(ready)
+        if not ready then return end
+        T.send(id, '/rename ' .. opts.session_name, { prompt = pattern })
+        if opts.briefing then vim.defer_fn(function() T.send(id, opts.briefing, { prompt = pattern }) end, 2500) end
+      end)
+    end
     hub.publish()
     return id
   end

@@ -5,7 +5,7 @@
 ## Language Rules
 
 - 사용자가 읽는 모든 출력(대화·보고·문서·주석)은 한국어다. 코드 식별자·경로·명령·로그 원문은 그대로 둔다.
-- 이 파일(`CLAUDE.md`)과 `AGENTS.md` 는 git 으로 추적한다. 두 파일은 같은 내용의 사본이며 한쪽을 고치면 다른 쪽도 같이 고친다.
+- 이 파일(`CLAUDE.md`)과 `AGENTS.md`는 로컬 AI 지침으로 Git에서 제외한다. 공통 내용을 유지하고 관련 내부 문서는 루트 `docs/`에서 관리한다. README·CHANGELOG는 루트에서 공유한다.
 
 ## Documentation Structure
 

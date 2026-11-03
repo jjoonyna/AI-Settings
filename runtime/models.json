@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "defaults": { "claude": "opus", "codex": "gpt-6.1-sol" },
+  "models": [
+    { "id": "fable", "vendor": "claude", "tier": 4, "label": "Fable 5.1" },
+    { "id": "opus", "vendor": "claude", "tier": 3, "label": "Opus 5.5" },
+    { "id": "sonnet", "vendor": "claude", "tier": 2, "label": "Sonnet 5.5" },
+    { "id": "haiku", "vendor": "claude", "tier": 1, "label": "Haiku 5.5" },
+    { "id": "gpt-6-astra", "vendor": "codex", "tier": 4, "label": "GPT-6 Astra" },
+    { "id": "gpt-6.1-sol", "vendor": "codex", "tier": 3, "label": "GPT-6.1 Sol" },
+    { "id": "gpt-6.1-terra", "vendor": "codex", "tier": 2, "label": "GPT-6.1 Terra" },
+    { "id": "gpt-6-luna", "vendor": "codex", "tier": 1, "label": "GPT-6 Luna" }
+  ]
+}

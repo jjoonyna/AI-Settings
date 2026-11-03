@@ -6,6 +6,11 @@ param(
 )
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
+if (Test-Path -LiteralPath (Join-Path $HomeDir '.ai-settings/manifest.json')) {
+  & node (Join-Path $HomeDir '.ai-settings/bin/uninstall.mjs') $HomeDir
+  if ($LASTEXITCODE -ne 0) { throw '제거 실패. 보존된 파일과 오류를 확인하세요.' }
+  return
+}
 . "$PSScriptRoot\scripts\lib.ps1"
 
 $manifestPath = Join-Path $HomeDir '.agent-env-manifest.json'

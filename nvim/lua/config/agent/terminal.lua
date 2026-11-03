@@ -61,7 +61,7 @@ function M.spawn(opts)
   local ok, chan = pcall(vim.fn.jobstart, opts.cmd, {
     term = true,
     cwd = opts.cwd,
-    env = opts.env,
+    env = vim.tbl_extend('force', {}, opts.env or {}, { AGENT_SESSION_ID = tostring(next_id + 1) }),
     on_exit = function(id)
       -- 자동 종료 요청(M.done)으로 끝난 세션은 창까지 닫아 화면에 남기지 않는다.
       local e = M.entry_by_chan(id)
@@ -83,7 +83,10 @@ function M.spawn(opts)
   next_id = next_id + 1
   local entry = {
     id = next_id,
-    name = make_name(opts.agent or "agent", opts.branch),
+    name = opts.name or make_name(opts.agent or "agent", opts.branch),
+    role = opts.role,
+    model = opts.model,
+    topic = opts.topic,
     agent = opts.agent,
     cwd = opts.cwd,
     branch = opts.branch,

@@ -3,7 +3,7 @@
 Describe '저장소 내용 검사' {
   It '비밀·런타임 파일이 저장소에 없다' {
     $bad = Get-ChildItem -LiteralPath $Repo -Recurse -Force -File |
-      Where-Object { $_.FullName -notmatch '\\\.git\\' } |
+      Where-Object { $_.FullName -notmatch '\\\.git\\|\\\.tools\\' } |
       Where-Object { $_.Name -match '^(\.credentials\.json|auth\.json|history\.jsonl|installed_plugins\.json|known_marketplaces\.json)$' -or $_.Extension -eq '.key' }
     $bad | Should -BeNullOrEmpty
   }
@@ -20,11 +20,12 @@ Describe '저장소 내용 검사' {
     $p.plugins.Count | Should -Be 3
     $p.marketplaces.'claude-plugins-official' | Should -Be 'anthropics/claude-plugins-official'
   }
-  It 'Codex 프로필 모델 매핑이 설계 D6 과 같다' {
-    $expect = @{ plan='gpt-6-astra'; 'deep-review'='gpt-6-astra'; work='gpt-6.1-sol'; 'plan-fallback'='gpt-6.1-sol'; review='gpt-6.1-sol'; research='gpt-6-luna'; build='gpt-6-luna' }
-    foreach ($k in $expect.Keys) {
-      (Get-Content -LiteralPath "$Repo\codex\$k.config.toml" -Encoding UTF8 | Where-Object { $_ -match '^model\s*=' }) |
-        Should -Match ([regex]::Escape($expect[$k]))
+  It '역할 프로필은 모델을 고정하지 않고 중앙 목록을 사용한다' {
+    foreach ($f in Get-ChildItem "$Repo\codex" -Filter '*.config.toml') {
+      (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8) | Should -Not -Match '(?m)^model\s*='
     }
+    $catalog = Get-Content "$Repo\runtime\models.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+    $catalog.defaults.claude | Should -Be 'opus'
+    $catalog.defaults.codex | Should -Be 'gpt-6.1-sol'
   }
 }
