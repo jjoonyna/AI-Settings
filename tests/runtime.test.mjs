@@ -92,6 +92,7 @@ test('independent install, reinstallation, personal configuration, mode switch a
     seed('.codex/config.toml', '[mcp_servers.personal]\ncommand = "personal"\n');
     fs.mkdirSync(path.join(nvim, 'lua/config'), { recursive: true });
     fs.writeFileSync(path.join(nvim, 'lua/config/local.lua'), 'return { python = "my-python" }');
+    fs.writeFileSync(path.join(nvim, 'lua/config/keymaps.lua'), 'vim.keymap.set("n", "<leader>mine", ":echo 1<CR>")');
     const options = { home, nvim, mode: 'both', skipTools: true };
     const first = install(options);
     const settings = JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json')));
@@ -102,6 +103,7 @@ test('independent install, reinstallation, personal configuration, mode switch a
     assert.match(guide, /Keep this/);
     assert.match(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8'), /mcp_servers.personal/);
     assert.equal(fs.readFileSync(path.join(nvim, 'lua/config/local.lua'), 'utf8'), 'return { python = "my-python" }');
+    assert.match(fs.readFileSync(path.join(nvim, 'lua/config/user-keymaps.lua'), 'utf8'), /<leader>mine/);
     assert.equal(fs.lstatSync(nvim).isSymbolicLink(), false);
     assert.equal(fs.existsSync(path.join(first.root, 'bin/statusline.mjs')), true);
     install(options);

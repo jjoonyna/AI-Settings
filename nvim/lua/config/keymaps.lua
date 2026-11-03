@@ -1,5 +1,11 @@
 ﻿-- LazyVim 기본 키맵 위에 개인 설정을 얹는다.
 
+-- Preserve existing personal mappings; managed mappings below take precedence.
+local local_map = vim.fn.stdpath('config') .. '/lua/config/user-keymaps.lua'
+if vim.fn.filereadable(local_map) == 1 then
+  local ok, err = pcall(dofile, local_map)
+  if not ok then vim.notify('Personal keymaps: ' .. tostring(err), vim.log.levels.WARN) end
+end
 local map = vim.keymap.set
 
 -- ── 창 이동: Alt+hjkl (터미널 모드 포함) ───────────────

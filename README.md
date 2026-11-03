@@ -4,14 +4,16 @@ Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. �
 
 ## 설치
 
-필수 도구: Windows 10/11, PowerShell 5.1+, Node.js 22+, Git, Neovim 0.12+, Codex CLI. Claude+Codex 구성은 Claude Code도 필요합니다. 디자인·PPT 도구를 함께 설치하려면 Python 3.11+가 필요하며 Microsoft Store 실행 별칭 대신 실제 Python 실행 파일을 사용합니다.
+Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
 ```powershell
 git clone https://github.com/jjoonyna/AI-Settings.git
-powershell -NoProfile -ExecutionPolicy Bypass -File .\AI-Settings\install.ps1
+.\AI-Settings\install.cmd
 ```
 
-메뉴에서 **Claude + Codex** 또는 **Codex만** 선택합니다. Neovim·공통 규칙·상태줄·디자인/PPT 스킬이 선택한 구성에 맞춰 자동 설치됩니다. 관리자 권한이나 symlink는 필요하지 않습니다. 도구 다운로드와 Python 패키지 설치에는 네트워크가 필요합니다.
+메뉴에서 **Claude + Codex** 또는 **Codex만** 선택합니다. Neovim·공통 규칙·상태줄·디자인/PPT 스킬이 선택한 구성에 맞춰 자동 설치됩니다. 설정 배치에는 관리자 권한이나 symlink가 필요하지 않지만 필수 프로그램 설치는 설치 관리자가 권한을 요청할 수 있습니다. 다운로드에는 네트워크가 필요합니다.
+
+`install.cmd`는 성공·실패 후 키 입력을 기다리므로 오류가 나도 창이 바로 닫히지 않습니다. 설치 로그는 `~/.ai-settings/logs/install-<시각>.log`에 남습니다. Neovim을 연 것만으로 설정이 설치되지는 않습니다. 설치 완료 후 Neovim을 다시 열고 일반 모드에서 Space → a → a를 누릅니다. Codex 전용 구성이면 Codex만 표시됩니다.
 
 ```powershell
 # 비대화형 설치

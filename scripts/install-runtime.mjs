@@ -81,6 +81,10 @@ export function install(options) {
     const localPath = path.join(nvim, 'lua/config/local.lua');
     const localLua = present(localPath) ? fs.readFileSync(localPath) : null;
     for (const folder of [nvim, path.join(home, '.claude'), path.join(home, '.codex'), path.join(home, '.claude/agents'), path.join(home, '.claude/hooks'), path.join(home, '.claude/skills/agent-init')]) detach(folder);
+    const userKeymaps = path.join(nvim, 'lua/config/keymaps.lua');
+    const preservedKeymaps = path.join(nvim, 'lua/config/user-keymaps.lua');
+    if (!old.files[userKeymaps] && present(userKeymaps) && !present(preservedKeymaps) &&
+        hash(fs.readFileSync(userKeymaps)) !== hash(fs.readFileSync(path.join(repo, 'nvim/lua/config/keymaps.lua')))) put(preservedKeymaps, fs.readFileSync(userKeymaps));
     copyTree(path.join(repo, 'nvim'), nvim);
     if (localLua) put(localPath, localLua);
     else {

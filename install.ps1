@@ -12,6 +12,15 @@ param(
 )
 Set-StrictMode -Version 2
 $ErrorActionPreference = 'Stop'
+$logPath = $null
+if (-not $DryRun) {
+  $logDir = Join-Path $HomeDir '.ai-settings/logs'
+  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+  $logPath = Join-Path $logDir ('install-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+  Start-Transcript -LiteralPath $logPath -Force | Out-Null
+  Write-Host "Install log: $logPath"
+}
+try {
 if (-not $Mode) {
   if ($DryRun) { $Mode = 'both' }
   else {
@@ -20,11 +29,13 @@ if (-not $Mode) {
     $Mode = if ($answer -eq '2') { 'codex' } else { 'both' }
   }
 }
-$required = @('node','git','nvim','codex')
+. (Join-Path $PSScriptRoot 'scripts/lib.ps1')
+. (Join-Path $PSScriptRoot 'scripts/bootstrap.ps1')
+Initialize-Prerequisites -Mode $Mode -DryRun:$DryRun -SkipTools:$SkipTools -PythonArg $Python
+$required = @('node','git','nvim','codex','wt')
 if ($Mode -eq 'both') { $required += 'claude' }
 $missing = @($required | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
 if ($missing.Count -and -not $DryRun) { throw ('PATH에 없음: ' + ($missing -join ', ')) }
-. (Join-Path $PSScriptRoot 'scripts/lib.ps1')
 $options = @{
   mode = $Mode; home = [IO.Path]::GetFullPath($HomeDir); nvim = [IO.Path]::GetFullPath($NvimDir)
   trusted = @($TrustedProjects | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
@@ -41,3 +52,6 @@ try {
   if ($DryRun) { Write-Host '설치 예정 내용만 출력했습니다. 설정은 변경하지 않았습니다.' }
   else { Write-Host '완료. Neovim을 다시 열고 필요한 CLI에 로그인하세요. 원본 clone 위치는 실행에 사용하지 않습니다.' }
 } finally { Remove-Item -LiteralPath $requestPath -Force -ErrorAction SilentlyContinue }
+} finally {
+  if ($logPath) { Write-Host "Install log saved: $logPath"; Stop-Transcript | Out-Null }
+}
