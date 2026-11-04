@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Windows 앱 리뷰는 명시적 코드 수정 금지 지시와 read-only sandbox 요청을 유지하며, MXC 없이 D: 원문을 읽는다. 설치된 최신 앱 core를 우선 사용.
+- Codex 앱 원격의 별도 작업·읽기 전용 리뷰 대화, 검토 본문 표시 및 결과 조회 지원.
 - 리뷰 세션이 수정 도구는 차단한 채 git 읽기·`verify_cmds` 검증·`session.mjs report -` stdin 보고를 직접 수행하도록 권한 조정.
 - 누락된 필수 프로그램 자동 설치·PATH 갱신, 창 유지용 install.cmd와 설치 로그 추가.
 - 첫 설치 전 개인 Neovim 키맵을 별도 보존하고 관리 키맵과 함께 로드.

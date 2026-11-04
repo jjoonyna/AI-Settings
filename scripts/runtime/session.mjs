@@ -1,8 +1,17 @@
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolveSessionModel } from './session-model.mjs';
-const [action, argument] = process.argv.slice(2);
+import { handoff, readThread } from './app-session.mjs';
+const [action, argument, expectedTurnId] = process.argv.slice(2);
 const server = action === 'report' ? process.env.AGENT_PARENT_SERVER : process.env.NVIM;
+if (!server && action !== 'report') {
+  try {
+    if (action === 'handoff') console.log(JSON.stringify(await handoff(JSON.parse(fs.readFileSync(argument, 'utf8').replace(/^\uFEFF/, '')))));
+    else if (action === 'preview') process.stdout.write(fs.readFileSync(argument, 'utf8'));
+    else if (action === 'status' || action === 'result') console.log(JSON.stringify(await readThread(argument, expectedTurnId), null, 2));
+    else throw new Error('Usage: session.mjs handoff request.json | preview document.md | status|result thread-id [expected-turn-id]');
+  } catch (error) { console.error(error.message); process.exitCode = 1; }
+} else {
 if (!server) { console.error('Neovim server is unavailable; start a managed session.'); process.exit(1); }
 let fn, payload;
 try {
@@ -25,3 +34,4 @@ try {
   process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '');
   process.exitCode = result.status === 0 && !/(FAIL:|PENDING:)/.test(String(result.stdout)) ? 0 : 1;
 } catch (error) { console.error(error.message); process.exitCode = 1; }
+}

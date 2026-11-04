@@ -69,3 +69,10 @@ nvim --headless -u NONE -i NONE -l nvim/tests/agent-hub/handoff-send.lua
 ```
 
 추가 PowerShell 테스트는 Pester 5로 실행합니다. 실제 로그인 계정의 사용률 제공 여부, CLI의 초기 이름 저장·resume, Windows Terminal 검토 창은 로그인한 데스크톱 환경에서 확인해야 합니다.
+
+
+### Codex 앱 원격 세션
+
+Neovim 없이 Codex 앱 계획 대화에서 `session.mjs handoff <요청.json>`으로 별도 작업·리뷰 대화를 시작합니다. 정확한 부모 ID와 실제 모델·계획 역할, 문서와 모델 상한을 검증하고 서버 응답의 샌드박스와 승인 설정이 맞을 때 작업을 시작합니다. 반환된 대화 ID와 turn ID로 `session.mjs status <대화 ID> <turn ID>` 또는 `result <대화 ID> <turn ID>`를 실행해 해당 작업의 상태와 보고를 확인합니다. 앱 자식은 최종 응답으로 보고하고 부모가 직접 읽습니다. `preview <문서>`는 검토 본문을 출력하며 표시는 승인이 아닙니다. 요청 형식은 설치된 `session-workflow` 스킬을 따릅니다.
+
+turn ID는 조회 시 생략할 수 있지만 완료를 확정하려면 handoff가 반환한 turn ID가 최신 turn과 일치해야 합니다. 앱 리뷰에는 코드 수정 금지를 명시하고 read-only sandbox를 요청합니다. D: exFAT에서는 OS 수준 쓰기 차단을 보장할 수 없으므로 리뷰 에이전트의 수정 금지 지시에 따라 운영합니다. 리뷰는 실제 원문을 읽고 근거를 보고합니다.
