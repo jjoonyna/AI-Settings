@@ -2,5 +2,8 @@
   { "name": "ppt-master", "url": "https://github.com/hugohe3/ppt-master.git", "ref": "main", "commit": "4a68cddaf40dc87891e6b64c6a69ef46adc1110c", "paths": ["skills/ppt-master"] },
   { "name": "ui-ux-pro-max", "url": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git", "ref": "main", "commit": "713eef51b04efc98d6fa565323b495f7c9c89fd4", "paths": [".claude/skills/ui-ux-pro-max", ".agents/skills/ui-ux-pro-max"] },
   { "name": "impeccable", "url": "https://github.com/pbakaus/impeccable.git", "ref": "main", "commit": "9fadc41729c38fd47d7ae622b501558653f9d2e9", "paths": [".agent/skills/impeccable", ".claude/skills/impeccable", ".agents/skills/impeccable"] },
-  { "name": "frontend-design", "cacheName": "anthropic-skills", "url": "https://github.com/anthropics/skills.git", "ref": "main", "commit": "ca45fc496a3436251f191354091d557da31c15b5", "paths": ["skills/frontend-design"] }
+  { "name": "frontend-design", "cacheName": "anthropic-skills", "url": "https://github.com/anthropics/skills.git", "ref": "main", "commit": "ca45fc496a3436251f191354091d557da31c15b5", "paths": ["skills/frontend-design"] },
+  { "name": "ponytail", "url": "https://github.com/DietrichGebert/ponytail.git", "ref": "main", "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846", "paths": ["skills/ponytail"] },
+  { "name": "refactoring", "cacheName": "agent-rules-books", "url": "https://github.com/ciembor/agent-rules-books.git", "ref": "main", "commit": "893a88a6fce3a80c565bf39ac65021b43a8b2990", "paths": ["refactoring"] },
+  { "name": "working-effectively-with-legacy-code", "cacheName": "agent-rules-books", "url": "https://github.com/ciembor/agent-rules-books.git", "ref": "main", "commit": "893a88a6fce3a80c565bf39ac65021b43a8b2990", "paths": ["working-effectively-with-legacy-code"] }
 ]

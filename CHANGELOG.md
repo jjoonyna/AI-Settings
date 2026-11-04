@@ -13,3 +13,5 @@
 - 내부 문서는 루트 docs/에서 Git 제외, README·CHANGELOG는 루트에서 공유.
 - PPT Master와 세 디자인 스킬의 고정 버전 설치 및 라이선스 보존.
 - 커밋·머지·push는 각각 사용자 명시 지시가 있을 때만 실행.
+- 코드 작성에 Ponytail 스킬 고정 설치 및 POLICY 적용 규칙 추가.
+- 리팩토링 기준·분리·검증·후보 기록 규칙과 agent-rules-books 리팩토링 스킬 고정 설치 추가.

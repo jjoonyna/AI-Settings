@@ -42,13 +42,15 @@ test('external design/PPT skills deploy independently with data, scripts and lic
   try {
     const home = path.join(temp, 'home');
     const result = install({ home, nvim: path.join(temp, 'nvim'), mode: 'codex', toolCache: process.env.AI_SETTINGS_TOOL_CACHE, skipToolDependencies: true });
-    for (const name of ['ppt-master', 'impeccable', 'ui-ux-pro-max', 'frontend-design']) assert.ok(fs.existsSync(path.join(home, '.codex/skills', name, 'SKILL.md')), name);
+    for (const name of ['ppt-master', 'impeccable', 'ui-ux-pro-max', 'frontend-design', 'ponytail', 'refactoring', 'working-effectively-with-legacy-code']) assert.ok(fs.existsSync(path.join(home, '.codex/skills', name, 'SKILL.md')), name);
     assert.ok(fs.readdirSync(path.join(home, '.codex/skills/ui-ux-pro-max/data')).length > 0);
     assert.ok(fs.existsSync(path.join(home, '.codex/skills/impeccable/scripts/impeccable.cmd')));
     assert.ok(fs.existsSync(path.join(home, '.codex/skills/ppt-master/scripts/attribution_guard.py')));
     assert.ok(fs.existsSync(path.join(home, '.codex/skills/frontend-design/LICENSE.txt')));
+    assert.ok(fs.existsSync(path.join(home, '.codex/skills/ponytail/LICENSE')));
+    for (const name of ['refactoring', 'working-effectively-with-legacy-code']) assert.ok(fs.existsSync(path.join(home, '.codex/skills', name, 'LICENSE')), `${name} LICENSE`);
     const manifest = JSON.parse(fs.readFileSync(path.join(result.root, 'manifest.json')));
-    assert.equal(Object.keys(manifest.tools).length, 4);
+    assert.equal(Object.keys(manifest.tools).length, 7);
     assert.doesNotMatch(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8'), /AI-Settings[\\/]/);
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });

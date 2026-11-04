@@ -44,9 +44,9 @@ Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 
 
 프로젝트 내부 문서는 `/docs/` 전체와 생성된 루트 `AGENTS.md`·`CLAUDE.md`를 Git에서 제외합니다. README·CHANGELOG는 루트에 둡니다. `/agent-init`은 기존 문서를 조사해 이 구조를 준비합니다. 커밋·머지·push는 각각 사용자 명시 지시가 있을 때만 실행합니다.
 
-## 디자인·PPT
+## 외부 스킬
 
-디자인 요청에 맞춰 UI UX Pro Max·frontend-design·Impeccable을 선택해 활용합니다. PPT는 [PPT Master](https://github.com/hugohe3/ppt-master)를 사용합니다. 외부 소스는 `runtime/tool-sources.json`에 고정한 커밋으로 설치하고 원본 라이선스를 보존합니다. Impeccable 엔진은 첫 실행 시 추가 다운로드가 필요할 수 있습니다. Python 의존성은 `~/.ai-settings/python`의 별도 환경에 설치합니다.
+코드 작성은 Ponytail 스킬(full)로 최소 변경을 우선합니다. 리팩토링은 agent-rules-books의 Refactoring·Working Effectively with Legacy Code 스킬을 적용하고, 범위 밖 후보는 `docs/refactoring/<영역>.md`에 기록합니다. 디자인 요청에 맞춰 UI UX Pro Max·frontend-design·Impeccable을 선택해 활용합니다. PPT는 [PPT Master](https://github.com/hugohe3/ppt-master)를 사용합니다. 외부 소스는 `runtime/tool-sources.json`에 고정한 커밋으로 설치하고 원본 라이선스를 보존합니다. Impeccable 엔진은 첫 실행 시 추가 다운로드가 필요할 수 있습니다. Python 의존성은 `~/.ai-settings/python`의 별도 환경에 설치합니다.
 
 ## 제거와 복구
 
