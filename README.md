@@ -26,7 +26,7 @@ git clone https://github.com/jjoonyna/AI-Settings.git
 
 설치 위치는 기본적으로 `~/.ai-settings`, `~/.codex`, `~/.claude`와 `%LOCALAPPDATA%/nvim`입니다. `-HomeDir`·`-NvimDir`로 격리 설치할 수 있습니다. `-TrustedProjects`, `-Jdk21`, `-Python`, `-RbmRoot`, `-DocsRoot`는 기존 옵션을 유지합니다. `-SkipTools`는 오프라인 진단용으로 외부 스킬·Python 의존성 설치를 건너뛰며, `-SkipPlugins`는 Claude 플러그인 설치를 건너뜁니다.
 
-Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 `auto_review`로 설정합니다. 계획 문서 전용 권한과 리뷰 읽기 전용 샌드박스는 유지합니다.
+Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 `auto_review`로 설정합니다. 계획 문서 전용 권한과 리뷰 읽기 전용 샌드박스는 유지합니다. Codex 리뷰는 테스트·보고가 샌드박스에 막히면 권한 상승을 요청합니다.
 
 재설치는 관리 항목을 새 규칙으로 갱신하고 개인 MCP·플러그인·권한·지침·PC별 경로·인증·대화 기록은 보존합니다. 같은 관리 항목의 충돌은 배포 규칙을 우선합니다. 기존 폴더 링크는 독립 복사본으로 전환합니다. 백업·소유 파일·외부 도구 버전은 `~/.ai-settings`에 기록합니다. 실패하면 설정 파일 변경을 복구하며 다운로드 캐시·Python 환경은 남을 수 있습니다.
 
@@ -39,6 +39,8 @@ Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 
 작업 결과는 별도 읽기 전용 리뷰를 거칩니다. Claude의 작업은 Claude에 맡기고, Codex 교차 리뷰는 Claude 5시간·주간 사용률 중 유효한 값 하나가 80% 이상일 때 허용합니다. Codex는 Codex만 호출합니다. 한도 정보가 없거나 2분 이상 오래되면 미확인으로 처리합니다.
 
 창 제목과 저장된 세션 이름은 `역할 | 작업 제목`입니다. 상태줄에는 모델·추론 수준·컨텍스트·5시간/주간 한도·작업 위치·브랜치를 표시합니다. Codex는 내장 상태줄 표현을 사용하므로 한도가 잔여량으로 보일 수 있습니다. Claude는 사용률을 표시하며 계정에서 제공하지 않는 값은 `?`로 표시합니다. resume 이름은 초기 `/rename` 전달과 CLI 지원 여부에 따라 확인이 필요합니다.
+
+Claude 리뷰 세션은 Edit·Write·NotebookEdit을 차단하고 `git diff/status/log/show`, 보고 전송(`session.mjs report -`, 표준 입력), WebFetch만 확인 없이 허용합니다. 그 밖의 Bash는 사용자 확인을 거치며, 핸드오프 JSON의 선택 키 `verify_cmds`(문자열 배열)에 적은 검증 명령은 확인 없이 실행됩니다.
 
 핸드오프·보고·사용자 검토 창은 설치된 `session-workflow` 스킬과 `bin/session.mjs`를 사용합니다. 상세 spec·plan은 AI 참고용이고, 사용자는 `docs/user-review/<주제>.md`를 새 창에서 확인한 뒤 Ctrl+D로 닫습니다. 닫기는 승인이 아닙니다. 추가 논의 후 진행 지시를 받으면 문서를 수정하고 검토안을 다시 표시합니다. 일반 진행 갱신이나 완료 때는 창을 열지 않습니다.
 

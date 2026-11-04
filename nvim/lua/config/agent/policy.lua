@@ -63,11 +63,21 @@ function M.resume_command(agent, mode)
     return { 'claude', mode == 'continue' and '--continue' or '--resume' }
   end
 end
-function M.command(agent, role, model, title)
+-- Bash 허용 패턴·명령에서 백슬래시가 제거되므로 슬래시 경로를 쓴다
+function M.report_cmd() return 'node ' .. (M.installation().runtime:gsub('\\', '/')) .. '/bin/session.mjs report' end
+function M.command(agent, role, model, title, opts)
   model = model or M.catalog().defaults[agent]
   if agent == 'claude' then
     local cmd = { 'claude', '--model', model }
-    if role == 'review' then vim.list_extend(cmd, { '--permission-mode', 'plan', '--tools', 'Read,Grep,Glob' }) end
+    if role == 'review' then
+      local allowed = { 'Read', 'Grep', 'Glob', 'WebFetch', 'Bash(git diff *)', 'Bash(git status *)', 'Bash(git log *)', 'Bash(git show *)', 'Bash(' .. M.report_cmd() .. ' *)' }
+      for _, c in ipairs((opts and opts.verify_cmds) or {}) do
+        allowed[#allowed + 1] = 'Bash(' .. c .. ')'
+        allowed[#allowed + 1] = 'Bash(' .. c .. ' *)'
+      end
+      vim.list_extend(cmd, { '--permission-mode', 'manual', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', '--allowedTools' })
+      vim.list_extend(cmd, allowed)
+    end
     if title then vim.list_extend(cmd, { '--name', title }) end
     return cmd
   end

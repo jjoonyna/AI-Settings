@@ -13,6 +13,7 @@ description: 계획·작업·읽기 전용 리뷰를 연결하고 모델 선택,
 node <설치루트>/bin/session.mjs handoff <요청.json>
 node <설치루트>/bin/session.mjs preview <프로젝트>/docs/user-review/<주제>.md
 node <설치루트>/bin/session.mjs report <결과.md>
+node <설치루트>/bin/session.mjs report -   # 본문을 표준 입력(heredoc)으로 전달
 ```
 
 handoff JSON에는 아래 Lua 예시와 같은 키를 사용한다. 런처가 Base64와 구조화된 인자로 전달하므로 주제·경로의 따옴표를 셸 코드에 직접 삽입하지 않는다. 다음은 Neovim 내부 Lua API 예시이며 `--remote-expr`에 Lua 테이블을 그대로 전달하지 않는다.
@@ -22,6 +23,7 @@ AgentHandoff({agent='claude', session='work', model='sonnet', parent_model='opus
 ```
 
 - `session='review'`는 읽기 전용으로 실행한다. 교차 Codex 리뷰에는 `parent_agent='claude'`와 실제 부모 모델을 전달한다. 도구가 사용률 캐시를 검증한다.
+- 리뷰 세션은 파일 쓰기가 금지되므로 보고를 `report -`(stdin heredoc)로 전송하고 출력의 OK를 확인한다. Claude 리뷰는 수정 도구만 차단하고 git 읽기 명령·보고 명령·WebFetch는 허용하며 그 밖의 Bash는 사용자 확인을 거친다. handoff JSON의 선택 키 `verify_cmds`(문자열 배열, 예: `["node --test"]`)로 지정한 검증 명령은 리뷰 세션에서 확인 없이 허용된다. PowerShell에서 `report -`로 파이프할 때는 먼저 `$OutputEncoding = [Text.UTF8Encoding]::new($false)`를 설정한다(미설정 시 한글이 `?`로 깨지며 session.mjs가 거부한다). Codex 리뷰는 read-only 샌드박스를 유지하며 테스트·보고 명령이 막히면 권한 상승을 요청한다. 리뷰 명령은 작업 폴더에서 바로 실행하고 cd … &&를 붙이지 않는다. 임시 파일을 만들지 않는다. 허용 목록 밖 명령이 필요하면 실행하지 말고 보고에 적는다.
 - 에이전트 도구에 모델 지정이 지원되면 같은 등급 정책으로 명시한다. 지원되지 않는 모델 지정으로 실행하지 말고 지원되는 세션 위임 경로를 사용한다.
 - 결과 보고: `AgentReport({parent_server='...', parent_id=숫자, text='완료 범위 / 검증 결과 / 미해결 / 다음 판단'})`. 수신 실패 시 다시 보고하며 전송 성공 전 완료 종료하지 않는다.
 - 사용자 검토 표시: `v:lua.AgentPlanPreview('프로젝트/docs/user-review/주제.md')`. 단순 상태 갱신·완료 시 자동 호출 금지. 창 닫기는 승인 아님.

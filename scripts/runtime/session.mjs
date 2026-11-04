@@ -16,8 +16,10 @@ try {
   }
   else if (action === 'preview') { fn = 'AgentUserReview64'; payload = { path: argument }; }
   else if (action === 'report') {
-    fn = 'AgentReceiveReport64'; payload = { parent_id: Number(process.env.AGENT_PARENT_ID), from: process.env.AGENT_SESSION_TITLE, text: fs.readFileSync(argument, 'utf8') };
-  } else throw new Error('Usage: session.mjs handoff request.json | preview document.md | report result.md');
+    const text = fs.readFileSync(argument === '-' ? 0 : argument, 'utf8');
+    if (text.includes('??') && !/[^\u0000-\u007f]/.test(text)) throw new Error('인코딩 손상 의심: PowerShell은 $OutputEncoding을 UTF-8로 설정 후 재전송');
+    fn = 'AgentReceiveReport64'; payload = { parent_id: Number(process.env.AGENT_PARENT_ID), from: process.env.AGENT_SESSION_TITLE, text };
+  } else throw new Error('Usage: session.mjs handoff request.json | preview document.md | report result.md|-');
   const encoded = Buffer.from(JSON.stringify(payload)).toString('base64');
   const result = spawnSync('nvim', ['--headless', '--server', server, '--remote-expr', `v:lua.${fn}('${encoded}')`], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
   process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || '');

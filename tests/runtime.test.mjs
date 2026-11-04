@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { install } from '../scripts/install-runtime.mjs';
 import { mergeToml, mergeJson, unmergeJson, stripManagedStopHooks } from '../scripts/config-merge.mjs';
 import { usageSnapshot, crossReviewAllowed, formatStatus } from '../scripts/runtime/statusline.mjs';
@@ -129,4 +129,23 @@ test('independent install, reinstallation, personal configuration, mode switch a
     assert.equal(fs.readFileSync(path.join(nvim, 'lua/config/local.lua'), 'utf8'), 'return { python = "my-python" }');
     assert.equal(fs.readFileSync(path.join(home, '.claude/.credentials.json'), 'utf8'), '{"keep":"secret"}');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+test('session.mjs report - reads stdin and reaches the server check', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const script = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..', 'scripts', 'runtime', 'session.mjs');
+  const env = { ...process.env }; delete env.AGENT_PARENT_SERVER;
+  const none = spawnSync(process.execPath, [script, 'report', '-'], { input: 'x', env, encoding: 'utf8' });
+  assert.equal(none.status, 1); assert.match(none.stderr, /server is unavailable/);
+  env.AGENT_PARENT_SERVER = path.join(os.tmpdir(), 'no-such-nvim-pipe');
+  const failed = spawnSync(process.execPath, [script, 'report', '-'], { input: '본문', env, encoding: 'utf8' });
+  assert.equal(failed.status, 1); assert.doesNotMatch(failed.stderr, /ENOENT|EISDIR|Usage/);
+});
+test('session.mjs report rejects ASCII-only text with ?? as suspected encoding damage', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const script = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'runtime', 'session.mjs');
+  const env = { ...process.env, AGENT_PARENT_SERVER: path.join(os.tmpdir(), 'no-such-nvim-pipe') };
+  const bad = spawnSync(process.execPath, [script, 'report', '-'], { input: '?? ?? ??: ??', env, encoding: 'utf8' });
+  assert.equal(bad.status, 1); assert.match(bad.stderr, /인코딩 손상 의심/);
+  const ok = spawnSync(process.execPath, [script, 'report', '-'], { input: '완료 ?? 확인', env, encoding: 'utf8' });
+  assert.doesNotMatch(ok.stderr, /인코딩 손상 의심/);
 });

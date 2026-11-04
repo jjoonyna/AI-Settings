@@ -12,15 +12,22 @@ function M.build_prompt(o)
     '검증·완료 기준: ' .. (o.validation or ''), '중단 조건: 주요 구현 결정·범위 변경 또는 해결 불가 시 부모에게 보고',
     '보고 대상: ' .. (o.report_to or '부모 서버 ' .. (o.parent_server or '') .. ', 세션 ' .. tostring(o.parent_id or '')),
     o.prompt or '', '사용자 명시 지시 없이 커밋·머지·push 금지. 전체 대화 대신 필요한 문서 구간을 읽는다.',
-    '보고는 완료 범위·변경 파일·검증 명령과 결과·미해결·다음 판단을 포함한다. AgentReport로 부모에게 전송하고 결과를 확인한다.',
+    '보고는 완료 범위·변경 파일·검증 명령과 결과·미해결·다음 판단을 포함한다. 보고는 `' .. policy.report_cmd() .. ' -`에 heredoc으로 본문을 넘겨 전송하고 출력의 OK를 확인한다. PowerShell에서는 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한 뒤 파이프한다.',
   }
-  if o.session == 'review' then lines[#lines + 1] = '읽기 전용 리뷰다. 코드 수정 및 수정 가능한 에이전트 위임 금지. 실제 변경 원문과 요구사항·테스트 증거를 읽고 근거를 보고한다.' end
+  if o.session == 'review' then lines[#lines + 1] = '읽기 전용 리뷰다. 코드 수정 및 수정 가능한 에이전트 위임 금지. 실제 변경 원문과 요구사항·테스트 증거를 읽고 근거를 보고한다.'
+    lines[#lines + 1] = 'Codex 리뷰는 테스트·보고 명령이 샌드박스에 막히면 권한 상승을 요청한다.'
+    lines[#lines + 1] = '리뷰 명령은 작업 폴더에서 바로 실행하고 cd … &&를 붙이지 않는다. 임시 파일을 만들지 않는다. 허용 목록 밖 명령이 필요하면 실행하지 말고 보고에 적는다.' end
   return table.concat(lines, '\n')
 end
 function M.receive(o)
   o = vim.deepcopy(o or {})
   o.session = o.session or 'work'; o.agent = o.agent or 'claude'
   if not o.name or not o.goal or not o.scope or not o.validation or not o.prompt then return 'FAIL: name·goal·scope·validation·prompt가 필요합니다' end
+  if o.verify_cmds ~= nil then
+    if type(o.verify_cmds) ~= 'table' then return 'FAIL: verify_cmds는 문자열 배열이어야 합니다' end
+    for _, c in ipairs(o.verify_cmds) do if type(c) ~= 'string' or vim.trim(c) == '' then return 'FAIL: verify_cmds는 문자열 배열이어야 합니다' end end
+    if #o.verify_cmds ~= vim.tbl_count(o.verify_cmds) then return 'FAIL: verify_cmds는 문자열 배열이어야 합니다' end
+  end
   if not o.spec_doc or not o.plan_doc then return 'FAIL: spec_doc·plan_doc가 필요합니다' end
   for _, p in ipairs({ o.spec_doc, o.plan_doc }) do if vim.fn.filereadable(p) ~= 1 then return 'FAIL: 문서 없음 ' .. p end end
   local cwd = o.worktree or o.cwd or vim.fn.getcwd()
@@ -65,7 +72,7 @@ function M.receive(o)
   if parent.model ~= o.parent_model then return 'FAIL: 실제 호출 세션과 parent_model·parent_id·parent_server가 일치해야 합니다' end
   if parent.role == 'review' and o.session ~= 'review' then return 'FAIL: 리뷰 세션은 수정 가능한 작업을 위임할 수 없습니다' end
   local title = policy.title(o.session, o.name)
-  local cmd = policy.command(o.agent, o.session, model.id, title)
+  local cmd = policy.command(o.agent, o.session, model.id, title, { verify_cmds = o.verify_cmds })
   if vim.fn.executable(cmd[1]) ~= 1 then return 'FAIL: PATH에 ' .. cmd[1] .. ' 없음' end
   local git = vim.fn.systemlist({ 'git', '-C', cwd, 'branch', '--show-current' })
   o.worktree = cwd

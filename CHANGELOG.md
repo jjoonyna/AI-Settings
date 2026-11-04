@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 리뷰 세션이 수정 도구는 차단한 채 git 읽기·`verify_cmds` 검증·`session.mjs report -` stdin 보고를 직접 수행하도록 권한 조정.
 - 누락된 필수 프로그램 자동 설치·PATH 갱신, 창 유지용 install.cmd와 설치 로그 추가.
 - 첫 설치 전 개인 Neovim 키맵을 별도 보존하고 관리 키맵과 함께 로드.
 
