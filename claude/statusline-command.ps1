@@ -3,4 +3,4 @@ $raw = [Console]::In.ReadToEnd()
 $runtimeRoot = if ($env:AI_SETTINGS_HOME) { $env:AI_SETTINGS_HOME } else { Join-Path (Split-Path $PSScriptRoot -Parent) '.ai-settings' }
 $scriptPath = Join-Path $runtimeRoot 'bin/statusline.mjs'
 if (Test-Path -LiteralPath $scriptPath) { $raw | & node $scriptPath }
-else { Write-Output 'model ? | Ctx ? | 5h ? | 7d ?' }
+else { Write-Output "model ?`n5h ?`n7d ?`nCtx ?" }

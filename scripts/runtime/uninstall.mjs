@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { mergeToml, tomlValues, unmergeJson, stripManagedStopHooks } from './config-merge.mjs';
+import { mergeToml, tomlValues, unmergeHookConfig } from './config-merge.mjs';
 const read = p => fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '');
 const hash = b => crypto.createHash('sha256').update(b).digest('hex');
 const within = (root, target) => { const rel = path.relative(path.resolve(root), path.resolve(target)); return !rel.startsWith('..') && !path.isAbsolute(rel); };
@@ -33,9 +33,7 @@ export function uninstall(home = os.homedir()) {
     try {
     if (config?.type === 'json') {
       const current = JSON.parse(bytes.toString('utf8').replace(/^\uFEFF/, ''));
-      const stops = stripManagedStopHooks(current.hooks?.Stop || [], (config.managed.hooks?.Stop || []).flatMap(g => (g.hooks || []).map(h => h.command)));
-      const restored = unmergeJson(current, config.managed, config.original);
-      if (stops.length) { restored.hooks ||= {}; restored.hooks.Stop = stops; }
+      const restored = unmergeHookConfig(current, config.managed, config.original);
       fs.writeFileSync(target, JSON.stringify(restored, null, 2) + '\n');
     } else if (config?.type === 'toml') {
       const values = tomlValues(bytes.toString('utf8')), previous = tomlValues(config.original), changes = {};

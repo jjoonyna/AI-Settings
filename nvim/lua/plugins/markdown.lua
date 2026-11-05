@@ -1,5 +1,14 @@
-﻿-- Markdown 형식 검사는 끄고 Marksman 링크 진단은 유지한다.
+-- Markdown 형식 검사는 끄고 Marksman 링크 진단은 유지한다.
 return {
+  {
+    'MeanderingProgrammer/render-markdown.nvim',
+    ft = { 'markdown', 'norg', 'rmd', 'org', 'codecompanion', 'agent_review_markdown' },
+    opts = function(_, opts)
+      opts.overrides = opts.overrides or {}
+      opts.overrides.filetype = opts.overrides.filetype or {}
+      opts.overrides.filetype.agent_review_markdown = { anti_conceal = { enabled = false } }
+    end,
+  },
   {
     'mfussenegger/nvim-lint',
     opts = function(_, opts)

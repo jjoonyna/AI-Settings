@@ -23,7 +23,7 @@ local function remote(code)
 end
 local ok, err = xpcall(function()
   local launch_error
-  require('config.agent.launcher').new({ cwd = cwd, name = '화면 검증 작업',
+  require('config.agent.launcher').new({ cwd = cwd, name = '화면 검증 작업', separate_server = true,
     test_cmd = { vim.fn.exepath('node'), '-e', 'let n=0;setInterval(()=>console.log(++n),200)' },
   }, function(success, value) if success then instance = value else launch_error = value end end)
   assert(vim.wait(25000, function() return instance or launch_error end, 30), '화면 시작 시간 초과')
@@ -63,33 +63,22 @@ local ok, err = xpcall(function()
   assert(connected, tostring(attach_error))
   local again = rpc('snapshot').data
   assert(again.pid == first.pid and again.entries[1].id == id, '동일 서버·터미널 재접속')
-  local plan_dir = cwd .. '/docs/superpowers/plans'
-  vim.fn.mkdir(plan_dir, 'p')
-  local plan = plan_dir .. '/새 계획.md'
-  vim.fn.writefile({ '# 새 계획', '', '상태: 검토용 문서', '', '한글 경로 자동 표시 검증' }, plan)
-  local claim_path = root .. '/previews/' .. vim.fn.sha256(vim.fn.fnamemodify(plan, ':p'):gsub('\\','/'):lower()) .. '.json'
-  assert(vim.wait(16000, function() return hub.read(claim_path) end, 100), '새 계획 자동 표시')
-  local claim = hub.read(claim_path)
-  assert(vim.wait(6000, function()
-    local worked, c = pcall(vim.fn.sockconnect, 'pipe', claim.server, { rpc = true })
-    if worked and c > 0 then preview_channel = c; return true end
-  end, 100), '계획 검토 창 연결')
-  assert(vim.wait(5000, function()
-    return vim.rpcrequest(preview_channel, 'nvim_exec_lua', 'return vim.fn.maparg("<C-d>","n")', {}) ~= ''
-  end, 50), '계획 검토 창 초기화')
-  local view = vim.rpcrequest(preview_channel, 'nvim_exec_lua', [[return {
-    file=vim.api.nvim_buf_get_name(0), readonly=vim.bo.readonly, modifiable=vim.bo.modifiable,
-    pid=vim.fn.getpid(), mapping=vim.fn.maparg('<C-d>','n'), theme=vim.g.colors_name }]], {})
-  print('계획 검토 창: ' .. vim.json.encode(view))
-  preview_pid = view.pid
-  assert(view.readonly and not view.modifiable and view.mapping:find('qa!',1,true), '계획 검토 전용 모드')
-  assert(view.theme == 'catppuccin-mocha', '검토 창 테마')
-  vim.rpcrequest(preview_channel, 'nvim_input', '<C-d>')
-  assert(vim.wait(4000, function() return not vim.uv.kill(preview_pid, 0) end, 40), 'Ctrl+d 검토 창 종료')
-  assert(rpc('snapshot').ok, '계획 창 종료 후 작업 유지')
+  remote([[require('config.agent.workspace').open(false)]])
+  local review_dir = cwd .. '/docs/user-review'
+  vim.fn.mkdir(review_dir, 'p')
+  local review = review_dir .. '/새 검토.md'
+  vim.fn.writefile({ '# 새 검토', '', '명시적 요청만 표시' }, review)
+  local result = remote('return require("config.agent.plan_preview").show(' .. vim.inspect({path=review, owner=id}) .. ')')
+  assert(result:match('^OK'), result)
+  local view = remote([[local W=require('config.agent.workspace');return {
+    readonly=vim.bo[W.state.body_buf].readonly, modifiable=vim.bo[W.state.body_buf].modifiable,
+    items=#require('config.agent.reviews').items() }]])
+  assert(view.readonly and not view.modifiable and view.items == 1, '명시적 검토 본문과 목록')
+  remote([[local W=require('config.agent.workspace');vim.api.nvim_set_current_win(W.state.body);vim.fn.maparg('<C-d>','n',false,true).callback();W.refresh();assert(not W.state.body)]])
+  assert(rpc('snapshot').ok, '본문 숨김 후 작업 유지')
   assert(rpc('stop').ok)
   assert(vim.wait(8000, function() return not vim.uv.kill(instance.pid,0) end, 50))
-  print('통과: 실제 화면·한글 경로·Ctrl+w/q·미저장 종료 방지·동일 작업 재접속·새 계획 자동 표시·Ctrl+d')
+  print('통과: 실제 화면·한글 경로·Ctrl+w/q·미저장 종료 방지·동일 작업 재접속·명시적 검토·본문 숨김')
   print('검증 기록: ' .. root)
   instance = nil
 end, debug.traceback)

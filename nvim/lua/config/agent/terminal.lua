@@ -52,7 +52,9 @@ function M.spawn(opts)
 
   -- vsplit 만 하면 현재 버퍼가 복제된다. enew 로 빈 버퍼를 만든 뒤 터미널로 바꾼다.
   -- 대시보드 위라면 분할하지 않고 그 창에서 바로 연다.
-  if on_dashboard() then
+  if require('config.agent.workspace').spawn_window() then
+    -- The conversation pane replaces its buffer; other jobs remain hidden.
+  elseif on_dashboard() then
     vim.cmd("enew")
   else
     vim.cmd((opts.split or "vsplit") .. " | enew")
@@ -62,21 +64,34 @@ function M.spawn(opts)
   if opts.resume then
     env = vim.fn.environ()
     for key in pairs(env) do
-      if key:match('^AGENT_SESSION_') or key:match('^AGENT_PARENT_') then env[key] = nil end
+      if key:match('^AGENT_SESSION_') or key:match('^AGENT_PARENT_')
+        or key == 'CLAUDE_SESSION_ID' or key == 'CODEX_THREAD_ID' or key == 'CODEX_SESSION_ID' then env[key] = nil end
     end
     env = vim.tbl_extend('force', env, opts.env or {})
   end
   env.AGENT_SESSION_ID = tostring(next_id + 1)
+  local event_token = require('config.agent.hub').uid()
+  env.AGENT_EVENT_TOKEN = event_token
+  env.AGENT_EVENT_INSTANCE = require('config.agent.hub').id
+  env.AGENT_EVENT_STARTED = tostring(os.time() * 1000)
   local ok, chan = pcall(vim.fn.jobstart, opts.cmd, {
     term = true,
     cwd = opts.cwd,
     env = env,
     clear_env = opts.resume and true or false,
-    on_exit = function(id)
+    on_exit = function(id, code)
       -- 자동 종료 요청(M.done)으로 끝난 세션은 창까지 닫아 화면에 남기지 않는다.
       local e = M.entry_by_chan(id)
       local buf = e and e.auto_close and e.buf or nil
-      unregister_by_chan(id)
+      if e and require('config.agent.workspace').active() and not e.auto_close then
+        e.exit_code = code
+        e.activity_status, e.status_source = code == 0 and 'interrupted' or 'error', 'process-exit'
+        if e.status ~= 'complete' and e.status ~= 'review_pending' then e.status = e.activity_status end
+        require('config.agent.hub').publish()
+        vim.schedule(function() require('config.agent.workspace').refresh() end)
+      else
+        unregister_by_chan(id)
+      end
       if buf then
         vim.schedule(function()
           if vim.api.nvim_buf_is_valid(buf) then
@@ -104,11 +119,17 @@ function M.spawn(opts)
     chan = chan,
     buf = vim.api.nvim_get_current_buf(),
     started_at = vim.loop.now(),
+    event_token = event_token,
+    event_started = tonumber(env.AGENT_EVENT_STARTED),
+    status = 'unknown',
+    parent_id = tonumber(opts.env and opts.env.AGENT_PARENT_ID),
   }
   M.registry[next_id] = entry
 
   -- winbar 가 버퍼 변수로 이름을 읽는다(Task 5).
   vim.b[entry.buf].agent_name = entry.name
+  vim.bo[entry.buf].bufhidden = 'hide'
+  if require('config.agent.workspace').active() then require('config.agent.workspace').select(entry.id, false) end
   return next_id, nil
 end
 
@@ -186,6 +207,7 @@ function M.send(id, text, opts)
   if not e then
     return false, "없는 터미널 id: " .. tostring(id)
   end
+  if e.exit_code ~= nil then return false, '종료된 터미널입니다 (exit=' .. e.exit_code .. ')' end
   local ok, err = pcall(vim.fn.chansend, e.chan, text)
   if not ok then
     return false, tostring(err)
@@ -218,6 +240,8 @@ function M.focus(id)
   if not e or not vim.api.nvim_buf_is_valid(e.buf) then
     return false
   end
+  local W = require('config.agent.workspace')
+  if W.active() then W.open(false); return W.select(id, true) end
   for _, w in ipairs(vim.api.nvim_list_wins()) do
     if vim.api.nvim_win_get_buf(w) == e.buf then
       vim.api.nvim_set_current_win(w)

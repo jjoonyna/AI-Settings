@@ -48,7 +48,7 @@ function M.context(entry, opts)
     '자신의 진행 기록: ' .. entry.note,
     '먼저 공유 폴더의 README.md와 다른 에이전트 기록, 작업 폴더의 .agent-shared.md가 있으면 읽으세요.',
     '자기 기록에 목표·확정 결정·진행 결과·변경 파일·미해결 항목을 한국어로 갱신하세요. 다른 에이전트 기록은 덮어쓰지 마세요.',
-    '사용자 확인이 필요할 때만 docs/user-review/<주제>.md를 AgentPlanPreview로 열고 Ctrl+D로 닫습니다. spec·plan 자체와 완료 상태는 자동 표시하지 않습니다.',
+    '사용자 확인이 필요할 때만 docs/user-review/<주제>.md를 session.mjs preview로 등록합니다. 승인 후에도 부모의 검증·리뷰 완료 확인 전까지 문서를 유지하며 파일은 보존합니다.',
     opts.plan_doc and ('설계·계획 문서: ' .. opts.plan_doc) or '',
     opts.prompt or '구체적인 작업 지시가 없으면 공유 기록을 확인하고 사용자 지시를 기다리세요.',
   }, '\n')
@@ -57,8 +57,9 @@ end
 function M.consume(path)
   local request = hub.read(path)
   if not request or request.instance ~= hub.id then return end
-  if M.consumed then return end
-  M.consumed = true
+  M.consumed = M.consumed or {}
+  if M.consumed[path] then return end
+  M.consumed[path] = true
   vim.env.AGENT_HUB_REQUEST = nil
   local response = { ok = false }
   local ok, err = pcall(function()
@@ -116,17 +117,25 @@ function M.new(opts, callback)
     return '실패: 알 수 없는 에이전트 또는 세션 종류'
   end
   local task = hub.task(opts.task_id, opts.name or '새 작업', cwd, opts.plan_doc)
-  local request = { action = 'server', instance = id, root = hub.root(), cwd = cwd,
+  if not opts.no_ui and not opts.separate_server then require('config.agent.workspace').open(false) end
+  local integrated = require('config.agent.workspace').active() and not opts.no_ui and not opts.separate_server
+  local request = { action = 'server', instance = integrated and hub.id or id, root = hub.root(), cwd = cwd,
     window = 'agent-hub-' .. id, server = '\\\\.\\pipe\\agent-hub-' .. id,
     init = vim.fn.stdpath('config') .. '/init.lua', nvim = vim.v.progpath,
     agent = agent, session = session, model = model, resume = opts.resume, name = opts.name or task.name, task_id = task.id,
-    prompt = opts.prompt, plan_doc = opts.plan_doc, test_cmd = opts.test_cmd }
+    prompt = opts.prompt, plan_doc = opts.plan_doc, test_cmd = opts.test_cmd, no_ui = opts.no_ui }
   vim.fn.mkdir(vim.fn.fnamemodify(path, ':h'), 'p')
   local fd, err = vim.uv.fs_open(path, 'wx', 384)
   if not fd then return '실패: 이미 등록된 요청이거나 저장할 수 없습니다: ' .. tostring(err) end
   local written, why = vim.uv.fs_write(fd, vim.json.encode(request), 0)
   vim.uv.fs_close(fd)
   if not written then return '실패: ' .. tostring(why) end
+  if integrated then
+    M.consume(path)
+    local status = hub.read(path .. '.result')
+    callback(status and status.ok or false, status and status.ok and hub.snapshot() or (status and status.error or '세션 생성 실패'))
+    return status and status.ok and ('시작 요청 등록: ' .. id) or ('실패: ' .. tostring(status and status.error))
+  end
   vim.system({ 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
     vim.fn.stdpath('config') .. '/scripts/agent-hub-launch.ps1', '-Request', path },
     { text = true, timeout = 10000 }, vim.schedule_wrap(function(result)

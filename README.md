@@ -32,17 +32,21 @@ Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 
 
 ## 사용
 
-`<leader>aa` / `:Agent`에서 새 세션, 선택 재개, 최근 재개를 고릅니다. `<leader>ar` / `:AgentResume`은 선택 재개, `<leader>ac` / `:AgentContinue`는 최근 재개입니다. `<leader>an` / `:AgentNew`에서도 같은 방식을 선택합니다. 재개는 현재 폴더의 CLI 기본 선택기 또는 최근 세션을 사용하며 모델과 제목을 묻지 않습니다. 저장된 이름을 미리 알 수 없어 허브 화면에는 임시 이름이 표시되며 CLI 저장 이름은 바꾸지 않습니다. 재개한 세션에서 위임할 때 정확한 세션 ID의 저장 모델과 규약에 맞는 저장 이름의 역할을 확인하며, 확인할 수 없는 정보는 선택 후 위임을 다시 요청합니다.
+`<leader>aa` / `:Agent`에서 새 세션, 선택 재개, 최근 재개를 고릅니다. `<leader>ar` / `:AgentResume`은 선택 재개, `<leader>ac` / `:AgentContinue`는 최근 재개입니다. `<leader>an` / `:AgentNew`에서도 같은 방식을 선택합니다. 재개는 현재 폴더의 CLI 기본 선택기 또는 최근 세션을 사용하며 모델과 제목을 묻지 않습니다. CLI 선택 전에는 임시 이름을 표시하고, 선택 후에는 세션 시작 훅에서 정확한 ID의 저장 이름·역할·모델을 복구합니다. 재개한 세션에서 위임하거나 작업 완료를 확인할 때 정확한 세션 ID의 저장 모델과 규약에 맞는 저장 이름의 역할을 확인하며, 확인할 수 없는 정보는 선택 후 위임을 다시 요청합니다.
 
 계획 세션이 난이도 → 작업량 → 예상 사용량 순서로 작업 모델을 정해 위임합니다. 일반 실행은 Sonnet·Terra, 명확한 작은 작업은 Haiku·Luna를 우선 검토합니다. 동일 모델도 사용할 수 있으며 자동 배정 상한은 호출 모델입니다. 모델 목록과 등급은 `runtime/models.json`, 운영 정본은 `runtime/POLICY.md`입니다. 설치 후에는 같은 파일이 `~/.ai-settings`에 배치됩니다.
 
 작업 결과는 별도 읽기 전용 리뷰를 거칩니다. Claude의 작업은 Claude에 맡기고, Codex 교차 리뷰는 Claude 5시간·주간 사용률 중 유효한 값 하나가 80% 이상일 때 허용합니다. Codex는 Codex만 호출합니다. 한도 정보가 없거나 2분 이상 오래되면 미확인으로 처리합니다.
 
-창 제목과 저장된 세션 이름은 `역할 | 작업 제목`입니다. 상태줄에는 모델·추론 수준·컨텍스트·5시간/주간 한도·작업 위치·브랜치를 표시합니다. Codex는 내장 상태줄 표현을 사용하므로 한도가 잔여량으로 보일 수 있습니다. Claude는 사용률을 표시하며 계정에서 제공하지 않는 값은 `?`로 표시합니다. resume 이름은 초기 `/rename` 전달과 CLI 지원 여부에 따라 확인이 필요합니다.
+창 제목과 저장된 세션 이름은 `역할 | 작업 제목`입니다. 상태줄은 모델과 5시간/주간 한도를 컨텍스트보다 먼저 표시하며 추론 수준·작업 위치·브랜치도 표시합니다. Codex는 내장 상태줄 표현을 사용하므로 한도가 잔여량으로 보일 수 있습니다. Claude는 사용률을 표시하며 계정에서 제공하지 않는 값은 `?`로 표시합니다. resume 이름은 초기 `/rename` 전달과 CLI 지원 여부에 따라 확인이 필요합니다.
 
-Claude 리뷰 세션은 Edit·Write·NotebookEdit을 차단하고 `git diff/status/log/show`, 보고 전송(`session.mjs report -`, 표준 입력), WebFetch만 확인 없이 허용합니다. 그 밖의 Bash는 사용자 확인을 거치며, 핸드오프 JSON의 선택 키 `verify_cmds`(문자열 배열)에 적은 검증 명령은 확인 없이 실행됩니다.
+Claude와 Codex 리뷰는 전체 승인으로 실행합니다. 리뷰 지시로 코드·문서·파일의 수정·생성·삭제를 금지하며 이 규칙은 셸과 외부 도구에도 적용합니다.
 
-핸드오프·보고·사용자 검토 창은 설치된 `session-workflow` 스킬과 `bin/session.mjs`를 사용합니다. 상세 spec·plan은 AI 참고용이고, 사용자는 `docs/user-review/<주제>.md`를 새 창에서 확인한 뒤 Ctrl+D로 닫습니다. 닫기는 승인이 아닙니다. 추가 논의 후 진행 지시를 받으면 문서를 수정하고 검토안을 다시 표시합니다. 일반 진행 갱신이나 완료 때는 창을 열지 않습니다.
+핸드오프·보고·검토는 설치된 `session-workflow` 스킬과 `bin/session.mjs`를 사용합니다. Neovim 작업 공간은 왼쪽부터 AI 목록·대화·문서 본문·문서 목록이며 문서가 없으면 2영역입니다. `Agent`·`AgentNew`는 같은 서버의 대화 버퍼를 사용하고 기존 외부 세션은 `AgentInstances`에서 연결합니다. AI를 바꿔도 숨긴 작업은 계속 실행됩니다. 검토 요청은 현재 대화 포커스를 유지합니다.
+
+사용자는 `docs/user-review/<주제>.md` 본문에서 a로 승인·진행, r로 수정 요청합니다. Ctrl+D는 본문 숨김이고 `AgentDocument`·`AgentDocuments`로 다시 표시합니다. 좁은 화면에서는 목록을 숨기며 `AgentList`로 AI 목록을 열 수 있습니다. 승인 후에도 문서는 남고 개정되면 재검토합니다. 부모의 검증·별도 리뷰 확인을 담은 `session.mjs task-complete <JSON>`만 정확한 소유자·작업의 문서를 목록에서 제거하며 원본은 보존합니다. 앱 원격 preview 본문 출력과 기존 standalone 별도 창도 유지합니다. 일반 진행 갱신이나 완료 때 검토를 새로 요청하지 않습니다.
+
+검토 본문은 읽기 전용 Markdown 뷰어로 표시합니다. AI 목록은 상태를 색상으로 표시하며 선택한 항목에서 `?`를 누르면 정확한 상태를 확인할 수 있습니다. 검토 대기에는 실제 활동 색상도 함께 표시합니다. 상태는 CLI 지원 hooks로 작업 중·응답 요청·대기·검토 대기·완료·중단·오류·확인 불가를 구분합니다. Codex 새 hooks는 `/hooks`에서 검토·신뢰해야 실행될 수 있습니다. 자동 신뢰·승인하지 않습니다. 미지원/미수신 이벤트는 확인 불가이며 `session.mjs activity <상태>`로 명시할 수 있습니다. Claude 중단의 전용 이벤트는 확인하지 못했습니다. 일반 clean exit는 중단, 비정상 종료는 오류로 구분하고 완료·검토 대기는 보존합니다. 턴 종료·프로세스 종료·단순 보고는 작업 완료가 아닙니다.
 
 프로젝트 내부 문서는 `/docs/` 전체와 생성된 루트 `AGENTS.md`·`CLAUDE.md`를 Git에서 제외합니다. README·CHANGELOG는 루트에 둡니다. `/agent-init`은 기존 문서를 조사해 이 구조를 준비합니다. 커밋·머지·push는 각각 사용자 명시 지시가 있을 때만 실행합니다.
 
@@ -62,10 +66,12 @@ Claude 리뷰 세션은 Edit·Write·NotebookEdit을 차단하고 `git diff/stat
 
 ```powershell
 node --test tests/runtime.test.mjs
+node --test tests/session-events.test.mjs
 $env:XDG_CONFIG_HOME = (Get-Location).Path
 nvim --headless -u NONE -i NONE -l nvim/tests/agent-hub/policy.lua
 nvim --headless -u NONE -i NONE -l nvim/tests/agent-hub/integration.lua
 nvim --headless -u NONE -i NONE -l nvim/tests/agent-hub/handoff-send.lua
+nvim --headless -u NONE -i NONE -l nvim/tests/agent-hub/workspace.lua
 ```
 
 추가 PowerShell 테스트는 Pester 5로 실행합니다. 실제 로그인 계정의 사용률 제공 여부, CLI의 초기 이름 저장·resume, Windows Terminal 검토 창은 로그인한 데스크톱 환경에서 확인해야 합니다.
@@ -75,4 +81,4 @@ nvim --headless -u NONE -i NONE -l nvim/tests/agent-hub/handoff-send.lua
 
 Neovim 없이 Codex 앱 계획 대화에서 `session.mjs handoff <요청.json>`으로 별도 작업·리뷰 대화를 시작합니다. 정확한 부모 ID와 실제 모델·계획 역할, 문서와 모델 상한을 검증하고 서버 응답의 샌드박스와 승인 설정이 맞을 때 작업을 시작합니다. 반환된 대화 ID와 turn ID로 `session.mjs status <대화 ID> <turn ID>` 또는 `result <대화 ID> <turn ID>`를 실행해 해당 작업의 상태와 보고를 확인합니다. 앱 자식은 최종 응답으로 보고하고 부모가 직접 읽습니다. `preview <문서>`는 검토 본문을 출력하며 표시는 승인이 아닙니다. 요청 형식은 설치된 `session-workflow` 스킬을 따릅니다.
 
-turn ID는 조회 시 생략할 수 있지만 완료를 확정하려면 handoff가 반환한 turn ID가 최신 turn과 일치해야 합니다. 앱 리뷰에는 코드 수정 금지를 명시하고 read-only sandbox를 요청합니다. D: exFAT에서는 OS 수준 쓰기 차단을 보장할 수 없으므로 리뷰 에이전트의 수정 금지 지시에 따라 운영합니다. 리뷰는 실제 원문을 읽고 근거를 보고합니다.
+turn ID는 조회 시 생략할 수 있지만 완료를 확정하려면 handoff가 반환한 turn ID가 최신 turn과 일치해야 합니다. 앱 리뷰는 전체 승인으로 시작하고 코드·문서·파일의 수정 금지를 지시합니다. 리뷰는 실제 원문을 읽고 근거를 보고합니다.

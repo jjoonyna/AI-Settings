@@ -6,6 +6,7 @@
 vim.api.nvim_create_autocmd("VimResized", {
   group = vim.api.nvim_create_augroup("equalize_windows", { clear = true }),
   callback = function()
+    if vim.t.agent_workspace then require('config.agent.workspace').layout(); return end
     local cur = vim.api.nvim_get_current_win()
     vim.cmd("wincmd =")
     vim.api.nvim_set_current_win(cur)
@@ -131,9 +132,9 @@ local function open_filetree()
   -- 그 외에는 항상 트리를 띄운다.
   -- 파일을 지정해 열었어도(`nvim foo.js`) 트리가 보이는 것이 요구사항이다.
   vim.schedule(function()
-    pcall(vim.cmd, "Neotree show")
-    -- 포커스는 편집 창에 둔다 — 트리에 갇히지 않게.
-    pcall(vim.cmd, "wincmd p")
+    if #vim.api.nvim_list_uis() == 0 then return end
+    require('config.agent').setup()
+    require('config.agent.workspace').open(false)
   end)
 end
 

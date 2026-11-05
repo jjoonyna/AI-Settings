@@ -76,8 +76,8 @@ local function focus()
   end)
 end
 
-local function rename()
-  local row = selected()
+local function rename(row)
+  row = row or selected()
   if not row or not row.entry.id then return end
   vim.ui.input({ prompt = '작업 이름: ', default = row.entry.name }, function(name)
     if not name then return end
@@ -88,8 +88,8 @@ local function rename()
   end)
 end
 
-local function shared()
-  local row = selected()
+local function shared(row)
+  row = row or selected()
   if not row or not hub.valid_id(row.entry.task_id) then return end
   local dir = hub.root() .. '/tasks/' .. row.entry.task_id
   local paths = vim.fn.glob(dir .. '/*.md', false, true)
@@ -97,11 +97,14 @@ local function shared()
   vim.ui.select(paths, { prompt = '공유 기록', format_item = function(path)
     local stat = vim.uv.fs_stat(path)
     return vim.fn.fnamemodify(path, ':t') .. '  ' .. (stat and os.date('%m-%d %H:%M', stat.mtime.sec) or '')
-  end }, function(path) if path then vim.cmd('edit ' .. vim.fn.fnameescape(path)) end end)
+  end }, function(path) if path then
+    if require('config.agent.workspace').active() then vim.cmd('tabnew') end
+    vim.cmd('edit ' .. vim.fn.fnameescape(path))
+  end end)
 end
 
-local function stop()
-  local row = selected()
+local function stop(row)
+  row = row or selected()
   if not row then return end
   if not row.instance.managed then vim.notify('일반 Neovim은 여기서 종료하지 않습니다'); return end
   local names = {}
@@ -157,5 +160,6 @@ function M.open()
   M.refresh()
 end
 
+M.rename, M.shared, M.stop = rename, shared, stop
 return M
 

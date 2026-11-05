@@ -20,9 +20,9 @@ test('install and reinstall manage automatic review without weakening role sandb
       assert.equal(base.approval_policy, '"on-request"'); assert.equal(base.approvals_reviewer, '"auto_review"'); assert.equal(base['mcp_servers.mine.command'], '"keep"'); assert.equal(base['profiles.plan.approval_policy'], undefined); assert.equal(base['profiles.plan.approvals_reviewer'], undefined); assert.equal(base['profiles.plan.other'], '"keep"');
       for (const role of ['plan', 'work', 'review']) {
         const values = tomlValues(fs.readFileSync(path.join(codex, role + '.config.toml'), 'utf8'));
-        assert.equal(values.approval_policy, undefined); assert.equal(values.approvals_reviewer, undefined); assert.equal(values['custom.value'], '"keep"');
+        assert.equal(values.approval_policy, role === 'review' ? '"never"' : undefined); assert.equal(values.approvals_reviewer, undefined); assert.equal(values['custom.value'], '"keep"');
         if (role === 'plan') { assert.equal(values.default_permissions, '"plan-docs"'); assert.equal(values['permissions.plan-docs.extends'], '":read-only"'); }
-        else assert.equal(values.sandbox_mode, role === 'work' ? '"workspace-write"' : '"read-only"');
+        else assert.equal(values.sandbox_mode, role === 'work' ? '"workspace-write"' : '"danger-full-access"');
       }
     }
     install(options); check();

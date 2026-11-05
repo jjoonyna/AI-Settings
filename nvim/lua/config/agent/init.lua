@@ -32,7 +32,7 @@ end
 
 --- 목록에서 골라 그 터미널 창으로 이동한다.
 function M.list()
-  require('config.agent.panel').open()
+  require('config.agent.workspace').open(true)
 end
 
 --- 목록에서 골라 프롬프트를 주입한다.
@@ -68,7 +68,24 @@ function M.send_selection()
 end
 
 function M.setup()
+  if M.started then return end
+  M.started = true
   require('config.agent.hub').setup()
+  vim.api.nvim_create_user_command('AgentWorkspace', function() require('config.agent.workspace').open(false) end, { desc = 'AI 작업 공간' })
+  vim.api.nvim_create_user_command('AgentInstances', function() require('config.agent.panel').open() end, { desc = '외부 세션 관리' })
+  vim.api.nvim_create_user_command('AgentDocuments', function() require('config.agent.workspace').show('docs') end, { desc = '검토 문서 목록' })
+  vim.api.nvim_create_user_command('AgentDocument', function() require('config.agent.workspace').show('body') end, { desc = '검토 본문 표시' })
+  vim.api.nvim_create_user_command('AgentReviewApprove', function() require('config.agent.workspace').decision('approved') end, {})
+  vim.api.nvim_create_user_command('AgentReviewRequest', function() require('config.agent.workspace').decision('changes_requested') end, {})
+  _G.AgentTaskComplete = function(o) return require('config.agent.reviews').complete(o) end
+  _G.AgentTaskComplete64 = function(value)
+    local ok, data = pcall(function() return vim.json.decode(vim.base64.decode(value)) end)
+    return ok and _G.AgentTaskComplete(data) or 'FAIL: 완료 확인 형식 오류'
+  end
+  vim.api.nvim_create_user_command('AgentTaskComplete', function(a)
+    local ok, result = pcall(function() return _G.AgentTaskComplete(vim.json.decode(a.args)) end)
+    vim.notify(ok and result or 'FAIL: 완료 확인 JSON 오류')
+  end, { nargs = 1, desc = '부모 검증·리뷰 후 정확한 작업 완료 확인' })
   vim.keymap.set('n', '<leader>an', function() require('config.agent.launcher').menu() end, { desc = '새 백그라운드 작업 세션' })
   vim.api.nvim_create_user_command('AgentNew', function() require('config.agent.launcher').menu() end, { desc = '새 유지 세션 열기' })
   vim.api.nvim_create_user_command('AgentDetach', function()

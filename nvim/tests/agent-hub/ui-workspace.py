@@ -1,0 +1,116 @@
+"""Real Neovim embed UI regression. Run with the installed tool Python (pip + msgpack vendor).
+No model, account, Windows Terminal window, or global installation is used.
+"""
+import os
+from pathlib import Path
+import queue
+import shutil
+import subprocess
+import tempfile
+import threading
+import time
+from pip._vendor import msgpack
+
+repo = Path(__file__).resolve().parents[3]
+with tempfile.TemporaryDirectory(prefix='ai-workspace-ui-') as folder:
+    env = dict(os.environ, XDG_CONFIG_HOME=str(repo), AGENT_HUB_HOME=folder)
+    for name in ['NVIM', 'AGENT_HUB_INSTANCE', 'AGENT_HUB_REQUEST', 'AGENT_HUB_MANAGED']:
+        env.pop(name, None)
+    process = subprocess.Popen([shutil.which('nvim'), '--embed', '-u', 'NONE', '-i', 'NONE'],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    replies = queue.Queue()
+    serial = 0
+
+    def receive():
+        unpacker = msgpack.Unpacker(raw=False, strict_map_key=False)
+        while chunk := process.stdout.read1(65536):
+            unpacker.feed(chunk)
+            for value in unpacker:
+                if value[0] == 1:
+                    replies.put(value)
+
+    threading.Thread(target=receive, daemon=True).start()
+
+    def rpc(method, args):
+        global serial
+        serial += 1
+        process.stdin.write(msgpack.packb([0, serial, method, args], use_bin_type=True))
+        process.stdin.flush()
+        result = replies.get(timeout=15)
+        assert result[1] == serial, result
+        if result[2] is not None:
+            raise RuntimeError(result[2])
+        return result[3]
+
+    def lua(code):
+        return rpc('nvim_exec_lua', [code, []])
+
+    def wait(code):
+        until = time.monotonic() + 5
+        while time.monotonic() < until:
+            if lua(code):
+                return
+            time.sleep(.03)
+        raise AssertionError((code, lua("return {mouse=vim.fn.getmousepos(), mode=vim.api.nvim_get_mode().mode, error=vim.v.errmsg, selected=W.state.selected}")))
+
+    def click(kind, line):
+        position = lua(f"return vim.api.nvim_win_get_position(W.state.{kind})")
+        # The workspace winbar occupies the first screen row of each pane.
+        rpc('nvim_input_mouse', ['left', 'press', '', 0, position[0] + line, position[1] + 2])
+        rpc('nvim_input_mouse', ['left', 'release', '', 0, position[0] + line, position[1] + 2])
+
+    try:
+        rpc('nvim_ui_attach', [190, 45, {'rgb': True, 'ext_linegrid': True}])
+        lua("""
+vim.opt.rtp:prepend(vim.fn.stdpath('config'))
+vim.o.mouse = 'a'
+dofile(vim.fn.stdpath('config') .. '/lua/config/keymaps.lua')
+W, T, R = require('config.agent.workspace'), require('config.agent.terminal'), require('config.agent.reviews')
+W.open(false)
+local cmd = {vim.fn.exepath('node'), '-e', 'setInterval(()=>{},1000)'}
+a = assert(T.spawn({cmd=cmd, agent='Codex', role='plan', model='gpt-6.1-sol', name='계획 | A', cwd=vim.fn.getcwd()}))
+b = assert(T.spawn({cmd=cmd, agent='Codex', role='work', model='gpt-6.1-terra', name='작업 | B', cwd=vim.fn.getcwd(), env={AGENT_PARENT_ID=tostring(a)}}))
+local root = vim.env.AGENT_HUB_HOME .. '/docs/user-review'
+vim.fn.mkdir(root, 'p')
+p, q = root .. '/first.md', root .. '/second.md'
+vim.fn.writefile({'# First'},p); vim.fn.writefile({'# Second'},q)
+W.select(a,true)
+""")
+        rpc('nvim_input', ['<C-w>'])
+        wait("return vim.api.nvim_get_mode().mode == 't'")
+        assert lua("return require('config.agent.plan_preview').show({path=p,owner=b}):match('^OK') ~= nil")
+        assert lua("return vim.api.nvim_get_current_win() == W.state.chat and vim.api.nvim_get_mode().mode == 't'")
+        rpc('nvim_input', ['<C-q>'])
+        wait("return vim.api.nvim_get_mode().mode:sub(1,1) == 'n'")
+        rpc('nvim_input', ['<A-h>'])
+        wait("return vim.api.nvim_get_current_win() == W.state.ai")
+        rpc('nvim_input', ['<A-l>'])
+        wait("return vim.api.nvim_get_current_win() == W.state.chat")
+        rpc('nvim_input', ['<C-w>'])
+        wait("return vim.api.nvim_get_mode().mode == 't'")
+        click('ai', 5)
+        wait("return vim.api.nvim_win_get_buf(W.state.chat) == T.registry[b].buf")
+        click('ai', 1)
+        wait("return vim.api.nvim_win_get_buf(W.state.chat) == T.registry[a].buf")
+        assert lua("return require('config.agent.plan_preview').show({path=q,owner=a}):match('^OK') ~= nil")
+        click('docs', 4)
+        wait("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# Second'")
+        click('docs', 1)
+        wait("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# First'")
+        assert lua("return W.state.selected == a and vim.fn.jobwait({T.registry[b].chan},0)[1] == -1")
+        rpc('nvim_ui_try_resize', [70, 30])
+        time.sleep(.1)
+        lua("W.refresh(); W.show('docs')")
+        click('docs', 4)
+        wait("return W.state.document == R.items()[2].id")
+        rpc('nvim_ui_try_resize', [190, 45])
+        time.sleep(.1)
+        assert lua("W.refresh(); return #vim.api.nvim_tabpage_list_wins(W.state.tab) == 4")
+        print('PASS embed UI: terminal input focus, AI/document mouse selection, independent selection, hidden live job, narrow/restore')
+    finally:
+        try:
+            process.stdin.write(msgpack.packb([2, 'nvim_command', ['qa!']], use_bin_type=True))
+            process.stdin.flush()
+            process.wait(timeout=5)
+        except (BrokenPipeError, subprocess.TimeoutExpired):
+            process.kill()

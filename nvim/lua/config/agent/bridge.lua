@@ -24,6 +24,7 @@ function M.install(T)
     local descriptor = { id = hub.uid(), name = opts.name or ((opts.agent or '에이전트') .. ' 작업'),
       cwd = opts.cwd, task_id = opts.task_id }
     hub.note(descriptor)
+    copy.env.AGENT_TASK_ID = descriptor.task_id
     if opts.initial_prompt then
       copy.cmd = vim.deepcopy(opts.cmd)
       copy.cmd[#copy.cmd + 1] = opts.initial_prompt(descriptor)

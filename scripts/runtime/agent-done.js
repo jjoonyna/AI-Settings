@@ -25,7 +25,8 @@ function main() {
     }
   } catch { return; }
   if (!text.trimEnd().endsWith('[AGENT-DONE]')) return;
-  const payload = Buffer.from(JSON.stringify({ parent_id: id, text, from: process.env.AGENT_SESSION_TITLE || 'child' })).toString('base64');
+  const payload = Buffer.from(JSON.stringify({ parent_id: id, owner: Number(process.env.AGENT_SESSION_ID), task_id: process.env.AGENT_TASK_ID,
+    text, from: process.env.AGENT_SESSION_TITLE || 'child' })).toString('base64');
   const result = spawnSync('nvim', ['--headless', '--server', server, '--remote-expr', `v:lua.AgentReceiveReport64('${payload}')`], { encoding: 'utf8', windowsHide: true, timeout: 15000 });
   if (result.status !== 0 || !(result.stdout || '').includes('OK')) return;
   // Parent owns closing a reviewed child; never kill an ancestor from a hook.

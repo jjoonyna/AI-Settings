@@ -74,7 +74,8 @@ function M.snapshot()
   local entries = {}
   for _, e in ipairs(require('config.agent.terminal').entries()) do
     entries[#entries + 1] = { id = e.id, name = e.name, agent = e.agent or '에이전트', cwd = e.cwd,
-      branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf, role = e.role, model = e.model }
+      branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf, role = e.role, model = e.model,
+      status = e.status or 'unknown', activity_status = e.activity_status, status_source = e.status_source, exit_code = e.exit_code }
   end
   return { version = 1, instance = M.id, pid = vim.fn.getpid(), server = vim.v.servername,
     managed = M.managed, window = M.window,
@@ -167,6 +168,7 @@ function M.setup()
   require('config.agent.handoff')
   for _, entry in ipairs(T.entries()) do if not entry.note then M.note(entry) end end
   require('config.agent.plan_preview').setup()
+  require('config.agent.activity').setup()
   local group = vim.api.nvim_create_augroup('agent_hub_registry', { clear = true })
   vim.api.nvim_create_autocmd('BufEnter', { group = group, callback = function()
     local title = T.name_of(vim.api.nvim_get_current_buf())

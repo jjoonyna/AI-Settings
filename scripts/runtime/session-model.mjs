@@ -9,11 +9,14 @@ function roleFromTitle(title) {
 }
 
 // Only an exact session identity and matching transcript header can establish a model.
-export function resolveSessionModel(env = process.env) {
+export function resolveSessionModel(env = process.env, hook) {
   if (env.AGENT_SESSION_VENDOR === 'claude' && env.CLAUDE_SESSION_ID) {
     const id = env.CLAUDE_SESSION_ID;
     if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined;
     const root = path.join(env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+    const fromHook = hook?.session_id === id && typeof hook.session_title === 'string' && hook.session_title;
+    const alias = model => /^(?:claude-)?(opus|sonnet|haiku|fable)(?:-|$)/.exec(model || '')?.[1];
+    if (fromHook && alias(hook.model)) return { id, title: fromHook, role: roleFromTitle(fromHook), model: alias(hook.model) };
     const matches = [];
     function scan(dir) {
       let entries; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -32,7 +35,8 @@ export function resolveSessionModel(env = process.env) {
       for (const r of records) if (r.type === 'assistant' && r.message?.model) model = r.message.model;
       let title;
       for (const r of records) if (r.type === 'custom-title' && r.sessionId === id) title = r.customTitle;
-      return { model: typeof model === 'string' && model ? model : undefined, role: roleFromTitle(title) };
+      title = fromHook || title;
+      return { model: alias(hook?.model || model), role: roleFromTitle(title), title, id };
     } catch { return undefined; }
   }
   if (env.AGENT_SESSION_VENDOR === 'claude') return undefined;
@@ -57,16 +61,15 @@ export function resolveSessionModel(env = process.env) {
     if (records[0]?.type !== 'session_meta' || records[0]?.payload?.id !== id) return undefined;
     let model;
     for (const record of records) if (record.type === 'turn_context') model = record.payload?.model;
-    let role;
+    let title;
     try {
       const index = fs.readFileSync(path.join(env.CODEX_HOME || path.join(os.homedir(), '.codex'), 'session_index.jsonl'), 'utf8');
-      let title;
       for (const line of index.split('\n').filter(Boolean)) {
-        const row = JSON.parse(line);
+        let row;
+        try { row = JSON.parse(line); } catch { continue; }
         if (row.id === id) title = row.thread_name;
       }
-      role = roleFromTitle(title);
     } catch { /* Unknown role requires confirmation. */ }
-    return { model: typeof model === 'string' && model ? model : undefined, role };
+    return { model: typeof model === 'string' && model ? model : undefined, role: roleFromTitle(title), title, id };
   } catch { return undefined; }
 }

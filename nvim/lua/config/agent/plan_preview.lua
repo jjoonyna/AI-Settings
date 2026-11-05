@@ -1,10 +1,16 @@
 -- Explicit user checkpoints only. Never watch spec/plan saves or ordinary status updates.
 local M = {}
-function M.show(path)
-  path = vim.fn.fnamemodify(path or '', ':p')
+function M.show(request)
+  local o = type(request) == 'table' and vim.deepcopy(request) or { path = request }
+  local path = vim.fn.fnamemodify(o.path or '', ':p')
   local normalized = path:gsub('\\', '/'):lower()
   if not normalized:match('/docs/user%-review/[^/]+%.md$') or vim.fn.filereadable(path) ~= 1 then
     return 'FAIL: docs/user-review/ 안의 기존 Markdown 검토 문서가 필요합니다'
+  end
+  if require('config.agent.workspace').active() then
+    o.path = path
+    local ok, result = pcall(require('config.agent.reviews').register, o)
+    return ok and result or 'FAIL: ' .. tostring(result)
   end
   local wt = vim.fn.exepath('wt.exe')
   if wt == '' then wt = (vim.env.LOCALAPPDATA or vim.fn.expand('~/AppData/Local')) .. '/Microsoft/WindowsApps/wt.exe' end
@@ -20,7 +26,7 @@ function M.setup()
   _G.AgentPlanPreview = M.show
   _G.AgentUserReview64 = function(value)
     local ok, data = pcall(function() return vim.json.decode(vim.base64.decode(value)) end)
-    return ok and M.show(data.path) or 'FAIL: 검토 요청 형식 오류'
+    return ok and M.show(data) or 'FAIL: 검토 요청 형식 오류'
   end
   vim.api.nvim_create_user_command('AgentPlanPreview', function(args)
     vim.notify(M.show(args.args ~= '' and args.args or vim.api.nvim_buf_get_name(0)))

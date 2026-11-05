@@ -46,6 +46,7 @@ function M.open(mode)
     if o.resume then cmd = policy.resume_command(o.agent, o.resume) else cmd = M.cmd_for(o.agent, 'plan', o.model, title) end
     if not cmd then vim.notify('잘못된 실행 요청', vim.log.levels.ERROR); return end
     if vim.fn.executable(cmd[1]) ~= 1 then vim.notify('PATH에 ' .. cmd[1] .. ' 없음', vim.log.levels.ERROR); return end
+    require('config.agent.workspace').open(false)
     local id, err = T.spawn({ agent = o.agent == 'codex' and 'Codex' or 'Claude', cmd = cmd, cwd = o.cwd,
       name = title, resume = o.resume, role = not o.resume and 'plan' or nil, model = o.model, topic = o.name, session_name = not o.resume and title or nil,
       env = { AGENT_SESSION_ROLE = not o.resume and 'plan' or nil, AGENT_SESSION_MODEL = o.model, AGENT_SESSION_VENDOR = o.agent, AGENT_SESSION_TITLE = not o.resume and title or nil,

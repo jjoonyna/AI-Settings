@@ -4,7 +4,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { mergeJson, mergeToml, unmergeJson, tomlValues, stripManagedStopHooks } from './config-merge.mjs';
+import { mergeJson, mergeToml, unmergeHookConfig, tomlValues, stripManagedStopHooks, mergeHooks } from './config-merge.mjs';
+import { commonEvents } from './runtime/session-events.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = p => fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '');
@@ -131,12 +132,12 @@ export function install(options) {
     for (const role of ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback']) {
       const target = path.join(codexHome, role + '.config.toml');
       const before = present(target) ? read(target) : '';
-      const managed = { ...tomlValues(read(path.join(repo, 'codex', role + '.config.toml'))), model: null, model_reasoning_effort: null, approval_policy: null, approvals_reviewer: null,
+      const managed = { ...tomlValues(read(path.join(repo, 'codex', role + '.config.toml'))), model: null, model_reasoning_effort: null, approval_policy: role === 'review' ? '"never"' : null, approvals_reviewer: null,
         ...(role === 'plan' ? { sandbox_mode: null } : { default_permissions: null }) };
       manifest.configs[target] = { type: 'toml', managed, original: old.configs?.[target]?.original ?? before };
       put(target, mergeToml(before, managed));
     }
-    const status = ['model-with-reasoning', 'context-used', 'five-hour-limit', 'weekly-limit', 'current-dir', 'git-branch'];
+    const status = ['model-with-reasoning', 'five-hour-limit', 'weekly-limit', 'context-used', 'current-dir', 'git-branch'];
     const codexConfig = path.join(codexHome, 'config.toml');
     const managed = { approval_policy: '"on-request"', approvals_reviewer: '"auto_review"', model: JSON.stringify(catalog.defaults.codex), model_reasoning_effort: '"medium"', 'tui.status_line': JSON.stringify(status), 'windows.sandbox': '"unelevated"' };
     for (const role of ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback']) {
@@ -144,12 +145,15 @@ export function install(options) {
       managed[`profiles.${role}.approvals_reviewer`] = null;
     }
     // Retain notify support for the existing completion hook; Codex-only uses its own installed hook.
-    managed.notify = JSON.stringify(['node', path.join(root, 'bin/agent-done.js').replaceAll('\\', '/'), '--codex']);
+    const beforeToml = present(codexConfig) ? read(codexConfig) : '';
+    const previousNotify = tomlValues(beforeToml).notify;
+    if (!previousNotify || previousNotify === old.configs?.[codexConfig]?.managed?.notify) {
+      managed.notify = JSON.stringify(['node', path.join(root, 'bin/agent-done.js').replaceAll('\\', '/'), '--codex']);
+    }
     for (const project of options.trusted || []) {
       // Quoted tables are appended separately below so arbitrary path dots aren't split as config keys.
       if (project.includes("'") || /[\r\n]/.test(project)) throw new Error('Unsupported trusted path');
     }
-    const beforeToml = present(codexConfig) ? read(codexConfig) : '';
     manifest.configs[codexConfig] = { type: 'toml', managed, original: old.configs?.[codexConfig]?.original ?? beforeToml };
     let toml = mergeToml(beforeToml, managed);
     for (const project of options.trusted || []) {
@@ -157,6 +161,14 @@ export function install(options) {
       if (!toml.includes(`[${table}]`)) toml += `\n[${table}]\ntrust_level = "trusted"\n`;
     }
     put(codexConfig, toml);
+    const eventCommand = vendor => 'node "' + path.join(root, 'bin/session-events.mjs').replaceAll('\\', '/') + '" ' + vendor;
+    const hooksFor = (vendor, events) => Object.fromEntries(events.map(event => [event, [{ hooks: [{ type: 'command', command: eventCommand(vendor), timeout: 3 }] }]]));
+    // hooks.json is additive to inline TOML hooks; never create trust overrides.
+    const hooksPath = path.join(codexHome, 'hooks.json');
+    const existingHooks = present(hooksPath) ? json(hooksPath) : {};
+    const codexHooks = { hooks: hooksFor('codex', [...commonEvents, 'Interrupt']) };
+    put(hooksPath, JSON.stringify({ ...existingHooks, hooks: mergeHooks(existingHooks.hooks, codexHooks.hooks) }, null, 2) + '\n');
+    manifest.configs[hooksPath] = { type: 'json', managed: codexHooks, original: old.configs?.[hooksPath]?.original ?? existingHooks };
     // Both tools receive the project-initialization and session workflow skills.
     const toolHomes = [codexHome];
     if (mode === 'both') toolHomes.push(path.join(home, '.claude'));
@@ -175,11 +187,13 @@ export function install(options) {
       const legacyStop = template.hooks.Stop[0].hooks[0].command;
       template.model = catalog.defaults.claude;
       template.hooks.Stop[0].hooks[0].command = 'node "' + path.join(root, 'bin/agent-done.js') + '"';
+      const events = hooksFor('claude', [...commonEvents, 'Notification', 'PostToolUseFailure', 'StopFailure']);
+      for (const [event, groups] of Object.entries(events)) template.hooks[event] = [...(template.hooks[event] || []), ...groups];
       const existing = present(target) ? json(target) : {};
       // Keep unrelated hook events and user Stop hooks; replace only our known hook.
-      const stops = stripManagedStopHooks(existing.hooks?.Stop || [], [legacyStop, template.hooks.Stop[0].hooks[0].command]);
+      const existingHookGroups = { ...existing.hooks, Stop: stripManagedStopHooks(existing.hooks?.Stop || [], [legacyStop]) };
       const merged = mergeJson(existing, template);
-      merged.hooks.Stop = [...stops, ...template.hooks.Stop];
+      merged.hooks = mergeHooks(existingHookGroups, template.hooks);
       put(target, JSON.stringify(merged, null, 2) + '\n');
       manifest.configs[target] = { type: 'json', managed: template, original: old.configs?.[target]?.original ?? existing };
     } else {
@@ -191,7 +205,7 @@ export function install(options) {
         // Remove only our Stop command while keeping unrelated hooks, including later additions.
         const commands = [...(config.managed.hooks?.Stop || []), ...(legacyTemplate.hooks?.Stop || [])].flatMap(g => (g.hooks || []).map(h => h.command));
         const savedStops = stripManagedStopHooks(current.hooks?.Stop || [], commands);
-        const reverted = unmergeJson(current, config.managed, config.original);
+        const reverted = unmergeHookConfig(current, config.managed, config.original);
         if (savedStops.length) { reverted.hooks ||= {}; reverted.hooks.Stop = savedStops; }
         put(target, JSON.stringify(reverted, null, 2) + '\n');
         delete manifest.configs[target];

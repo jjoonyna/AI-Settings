@@ -147,3 +147,24 @@ export function mergeJson(local, managed) {
   }
   return out;
 }
+
+export function mergeHooks(current, managed) {
+  const result = structuredClone(current || {});
+  for (const [event, groups] of Object.entries(managed || {})) {
+    const commands = groups.flatMap(g => g.hooks || []).map(h => h.command);
+    result[event] = [...stripManagedStopHooks(result[event] || [], commands), ...structuredClone(groups)];
+  }
+  return result;
+}
+
+export function unmergeHookConfig(current, managed, original) {
+  const result = unmergeJson(current, managed, original);
+  for (const [event, groups] of Object.entries(managed.hooks || {})) {
+    const commands = groups.flatMap(g => g.hooks || []).map(h => h.command);
+    const kept = stripManagedStopHooks(current.hooks?.[event] || [], commands);
+    if (kept.length) { result.hooks ||= {}; result.hooks[event] = kept; }
+    else if (result.hooks) delete result.hooks[event];
+  }
+  if (result.hooks && !Object.keys(result.hooks).length) delete result.hooks;
+  return result;
+}

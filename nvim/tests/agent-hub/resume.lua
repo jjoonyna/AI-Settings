@@ -56,18 +56,18 @@ if vim.v.servername == '' then vim.fn.serverstart() end
 local doc = vim.fn.tempname(); vim.fn.writefile({ 'spec' }, doc)
 terminal.registry[999] = { id = 999, agent = 'Codex', resume = 'resume' }
 local req = { parent_id = 999, parent_server = vim.v.servername, agent = 'codex', session = 'work', model = 'gpt-6-luna',
-  name = 'x', goal = 'x', scope = 'x', validation = 'x', prompt = 'x', spec_doc = doc, plan_doc = doc, cwd = vim.fn.getcwd(), resolved_session = { model = 'gpt-6.1-sol', role = 'plan' } }
+  name = 'x', goal = 'x', scope = 'x', validation = 'x', prompt = 'x', spec_doc = doc, plan_doc = doc, cwd = vim.fn.getcwd(), resolved_session = { id = '12345678-1234-1234-1234-123456789abc', model = 'gpt-6.1-sol', role = 'plan' } }
 assert(handoff.receive(req):find('OK', 1, true))
-req.model = 'gpt-6.1-sol'; req.resolved_session = { model = 'gpt-6-luna', role = 'plan' }
+req.model = 'gpt-6.1-sol'; req.resolved_session = { id = '12345678-1234-1234-1234-123456789abc', model = 'gpt-6-luna', role = 'plan' }
 assert(handoff.receive(req):find('FAIL:', 1, true))
-req.resolved_session = { model = 'unknown', role = 'plan' }; req.model = 'gpt-6-luna'
+req.resolved_session = { id = '12345678-1234-1234-1234-123456789abc', model = 'unknown', role = 'plan' }; req.model = 'gpt-6-luna'
 vim.ui.select = function(items, _, cb) cb(items[1]) end
 assert(handoff.receive(req):find('PENDING:', 1, true))
 assert(vim.wait(1000, function() return terminal.registry[999].confirmed_model ~= nil end))
 assert(handoff.receive(req):find('OK', 1, true))
-req.resolved_session = { model = 'gpt-6.1-sol', role = 'review' }
+req.resolved_session = { id = '12345678-1234-1234-1234-123456789abc', model = 'gpt-6.1-sol', role = 'review' }
 assert(handoff.receive(req):find('FAIL:', 1, true))
-req.resolved_session = { model = 'gpt-6.1-sol' }
+req.resolved_session = { id = '12345678-1234-1234-1234-123456789abc', model = 'gpt-6.1-sol' }
 assert(handoff.receive(req):find('PENDING:', 1, true))
 assert(vim.wait(1000, function() return terminal.registry[999].confirmed_role ~= nil end))
 assert(handoff.receive(req):find('OK', 1, true))

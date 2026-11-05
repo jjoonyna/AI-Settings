@@ -2,6 +2,46 @@ local M = {}
 local policy = require('config.agent.policy')
 local terminal = require('config.agent.terminal')
 
+function M.restore_resume(parent, metadata)
+  if type(metadata) ~= 'table' or not metadata.id or (parent.cli_session and parent.cli_session ~= metadata.id) then return end
+  local vendor = parent.agent == 'Codex' and 'codex' or 'claude'
+  local model = metadata.model and policy.model(metadata.model)
+  parent.cli_session = metadata.id
+  parent.model = model and model.vendor == vendor and model.id or nil
+  parent.role = metadata.role
+  if type(metadata.title) == 'string' and metadata.title ~= '' then
+    parent.role = metadata.role
+    parent.name = metadata.title:gsub('[%c]', '')
+    if parent.buf and vim.api.nvim_buf_is_valid(parent.buf) then vim.b[parent.buf].agent_name = parent.name end
+  end
+end
+
+function M.resolve_resume(parent, metadata)
+  if metadata and metadata.id and parent.cli_session and metadata.id ~= parent.cli_session then return 'FAIL: 재개 세션 ID 불일치' end
+  M.restore_resume(parent, metadata)
+  local vendor = parent.agent == 'Codex' and 'codex' or 'claude'
+  local current_model = parent.model or parent.confirmed_model
+  local current_role = parent.role or parent.confirmed_role
+  if not current_model or not current_role then
+    local choices, prompt, field
+    if not current_role then
+      choices = { { id = 'plan', label = '계획' }, { id = 'work', label = '작업' }, { id = 'review', label = '리뷰' } }
+      prompt, field = '현재 재개 세션의 역할 확인', 'confirmed_role'
+    else
+      choices = vim.tbl_filter(function(m) return m.vendor == vendor end, policy.catalog().models)
+      prompt, field = '현재 재개 세션의 모델 확인', 'confirmed_model'
+    end
+    vim.schedule(function()
+      vim.ui.select(choices, { prompt = prompt .. ' (선택 후 요청 재시도)', format_item = function(m) return m.label end }, function(choice)
+        if choice then parent[field] = choice.id; vim.notify('확인됨: 현재 요청을 다시 실행하세요') end
+      end)
+    end)
+    return 'PENDING: 현재 세션 정보를 확인한 뒤 현재 요청을 다시 실행하세요'
+  end
+  parent.model, parent.role = current_model, current_role
+  parent.confirmed_model, parent.confirmed_role = nil, nil
+end
+
 function M.build_prompt(o)
   local lines = {
     '역할: ' .. (o.session or 'work'), '작업: ' .. (o.name or ''),
@@ -14,9 +54,8 @@ function M.build_prompt(o)
     o.prompt or '', '사용자 명시 지시 없이 커밋·머지·push 금지. 전체 대화 대신 필요한 문서 구간을 읽는다.',
     '보고는 완료 범위·변경 파일·검증 명령과 결과·미해결·다음 판단을 포함한다. 보고는 `' .. policy.report_cmd() .. ' -`에 heredoc으로 본문을 넘겨 전송하고 출력의 OK를 확인한다. PowerShell에서는 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한 뒤 파이프한다.',
   }
-  if o.session == 'review' then lines[#lines + 1] = '읽기 전용 리뷰다. 코드 수정 및 수정 가능한 에이전트 위임 금지. 실제 변경 원문과 요구사항·테스트 증거를 읽고 근거를 보고한다.'
-    lines[#lines + 1] = 'Codex 리뷰는 테스트·보고 명령이 샌드박스에 막히면 권한 상승을 요청한다.'
-    lines[#lines + 1] = '리뷰 명령은 작업 폴더에서 바로 실행하고 cd … &&를 붙이지 않는다. 임시 파일을 만들지 않는다. 허용 목록 밖 명령이 필요하면 실행하지 말고 보고에 적는다.' end
+  if o.session == 'review' then lines[#lines + 1] = '읽기 전용 리뷰다. 편집 도구·셸·외부 도구로 코드, 문서 또는 파일을 수정·생성·삭제하지 않는다. 재위임 금지. 실제 변경 원문과 요구사항·테스트 증거를 읽고 근거를 보고한다.'
+    lines[#lines + 1] = '리뷰 명령은 작업 폴더에서 바로 실행하고 cd … &&를 붙이지 않는다. 임시 파일을 만들지 않는다. 파일을 변경하는 검증 명령은 실행하지 말고 보고에 적는다.' end
   return table.concat(lines, '\n')
 end
 function M.receive(o)
@@ -42,41 +81,21 @@ function M.receive(o)
   local parent = terminal.registry[tonumber(o.parent_id)]
   if o.parent_server ~= vim.v.servername or not parent then return 'FAIL: 부모 세션을 찾을 수 없습니다' end
   if parent.resume then
-    local vendor = parent.agent == 'Codex' and 'codex' or 'claude'
-    local metadata = type(o.resolved_session) == 'table' and o.resolved_session or {}
-    local resolved = metadata.model and policy.model(metadata.model)
-    local current_model = resolved and resolved.vendor == vendor and resolved.id or parent.confirmed_model
-    local current_role = ({ plan = true, work = true, review = true })[metadata.role] and metadata.role or parent.confirmed_role
-    if not current_model or not current_role then
-      local choices, prompt, field
-      if not current_role then
-        choices = { { id = 'plan', label = '계획' }, { id = 'work', label = '작업' }, { id = 'review', label = '리뷰' } }
-        prompt, field = '현재 재개 세션의 역할 확인', 'confirmed_role'
-      else
-        choices = vim.tbl_filter(function(m) return m.vendor == vendor end, policy.catalog().models)
-        prompt, field = '현재 재개 세션의 모델 확인', 'confirmed_model'
-      end
-      vim.schedule(function()
-        vim.ui.select(choices, { prompt = prompt .. ' (선택 후 위임 재시도)', format_item = function(m) return m.label end }, function(choice)
-          if choice then parent[field] = choice.id; vim.notify('확인됨: 위임을 다시 요청하세요') end
-        end)
-      end)
-      return 'PENDING: 현재 세션 정보를 확인한 뒤 위임을 다시 요청하세요'
-    end
-    parent.model, parent.role = current_model, current_role
-    parent.confirmed_model, parent.confirmed_role = nil, nil
-    o.parent_model, o.parent_agent = current_model, vendor
+    local pending = M.resolve_resume(parent, o.resolved_session)
+    if pending then return pending end
+    o.parent_model, o.parent_agent = parent.model, parent.agent == 'Codex' and 'codex' or 'claude'
   end
+  if parent.role ~= 'plan' then return 'FAIL: 계획 세션만 작업·리뷰를 위임할 수 있습니다' end
   local model, error = policy.validate(o)
   if not model then return 'FAIL: ' .. error end
   if parent.model ~= o.parent_model then return 'FAIL: 실제 호출 세션과 parent_model·parent_id·parent_server가 일치해야 합니다' end
-  if parent.role == 'review' and o.session ~= 'review' then return 'FAIL: 리뷰 세션은 수정 가능한 작업을 위임할 수 없습니다' end
   local title = policy.title(o.session, o.name)
   local cmd = policy.command(o.agent, o.session, model.id, title, { verify_cmds = o.verify_cmds })
   if vim.fn.executable(cmd[1]) ~= 1 then return 'FAIL: PATH에 ' .. cmd[1] .. ' 없음' end
   local git = vim.fn.systemlist({ 'git', '-C', cwd, 'branch', '--show-current' })
   o.worktree = cwd
   local id, why = terminal.spawn({ agent = o.agent == 'codex' and 'Codex' or 'Claude', cmd = cmd, cwd = cwd,
+    task_id = o.task_id,
     branch = vim.v.shell_error == 0 and git[1] or nil, name = title, role = o.session, model = model.id, topic = o.name,
     session_name = title, briefing = M.build_prompt(o),
     env = { AGENT_SESSION_ROLE = o.session, AGENT_SESSION_MODEL = model.id, AGENT_SESSION_VENDOR = o.agent, AGENT_SESSION_TITLE = title,
@@ -92,6 +111,12 @@ function M.receive_report(o)
   local report = hub.root() .. '/reports/' .. hub.uid() .. '.json'
   if not hub.write(report, { from = o.from, text = o.text, parent_id = o.parent_id, time = os.time() }) then return 'FAIL: 보고 저장 실패' end
   local ok, why = terminal.send(entry.id, '[작업/리뷰 보고]\n' .. o.text, { prompt = entry.agent == 'Codex' and '›' or '❯' })
+  local child = terminal.registry[tonumber(o.owner)]
+  if ok and child and child.parent_id == entry.id and child.task_id == o.task_id then
+    child.status = 'review_pending'
+    hub.publish()
+    require('config.agent.workspace').refresh()
+  end
   return ok and ('OK report=' .. report) or ('FAIL: ' .. tostring(why))
 end
 function M.report(o)

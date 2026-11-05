@@ -70,13 +70,7 @@ function M.command(agent, role, model, title, opts)
   if agent == 'claude' then
     local cmd = { 'claude', '--model', model }
     if role == 'review' then
-      local allowed = { 'Read', 'Grep', 'Glob', 'WebFetch', 'Bash(git diff *)', 'Bash(git status *)', 'Bash(git log *)', 'Bash(git show *)', 'Bash(' .. M.report_cmd() .. ' *)' }
-      for _, c in ipairs((opts and opts.verify_cmds) or {}) do
-        allowed[#allowed + 1] = 'Bash(' .. c .. ')'
-        allowed[#allowed + 1] = 'Bash(' .. c .. ' *)'
-      end
-      vim.list_extend(cmd, { '--permission-mode', 'manual', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', '--allowedTools' })
-      vim.list_extend(cmd, allowed)
+      vim.list_extend(cmd, { '--permission-mode', 'bypassPermissions' })
     end
     if title then vim.list_extend(cmd, { '--name', title }) end
     return cmd
