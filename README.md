@@ -6,6 +6,10 @@ Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. �
 
 Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
+[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 설치할 버전의 **Source code (zip)**을 내려받습니다. 압축을 푼 폴더에서 `install.cmd`를 실행합니다.
+
+Git으로 저장소를 받아 설치할 수도 있습니다.
+
 ```powershell
 git clone https://github.com/jjoonyna/AI-Settings.git
 .\AI-Settings\install.cmd
@@ -31,6 +35,8 @@ Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 
 재설치는 관리 항목을 새 규칙으로 갱신하고 개인 MCP·플러그인·권한·지침·PC별 경로·인증·대화 기록은 보존합니다. 같은 관리 항목의 충돌은 배포 규칙을 우선합니다. 기존 폴더 링크는 독립 복사본으로 전환합니다. 백업·소유 파일·외부 도구 버전은 `~/.ai-settings`에 기록합니다. 실패하면 설정 파일 변경을 복구하며 다운로드 캐시·Python 환경은 남을 수 있습니다.
 
 ## 사용
+
+[한국어 사용설명서 PDF](runtime/AI-Settings-User-Guide.ko.pdf)에서 설치, 첫 세션, 검토, 문제 해결 절차를 볼 수 있습니다. 설치 후 기본 위치는 `%USERPROFILE%\.ai-settings\AI-Settings-User-Guide.ko.pdf`입니다.
 
 `<leader>aa` / `:Agent`에서 새 세션, 선택 재개, 최근 재개를 고릅니다. `<leader>ar` / `:AgentResume`은 선택 재개, `<leader>ac` / `:AgentContinue`는 최근 재개입니다. `<leader>an` / `:AgentNew`에서도 같은 방식을 선택합니다. 재개는 현재 폴더의 CLI 기본 선택기 또는 최근 세션을 사용하며 모델과 제목을 묻지 않습니다. CLI 선택 전에는 임시 이름을 표시하고, 선택 후에는 세션 시작 훅에서 정확한 ID의 저장 이름·역할·모델을 복구합니다. 재개한 세션에서 위임하거나 작업 완료를 확인할 때 정확한 세션 ID의 저장 모델과 규약에 맞는 저장 이름의 역할을 확인하며, 확인할 수 없는 정보는 선택 후 위임을 다시 요청합니다.
 
