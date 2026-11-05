@@ -31,6 +31,11 @@ local function unregister_by_chan(chan)
   end
 end
 
+function M.display_name(entry)
+  local selecting = entry.resume == 'resume' and not entry.cli_session and entry.exit_code == nil
+  return selecting and '세션 선택 중' or entry.name, selecting
+end
+
 --- 현재 창이 LazyVim 대시보드(snacks dashboard)인지.
 --- 대시보드 위에서 세션을 열면 옆에 분할하지 않고 그 자리를 덮어써서
 --- 첫 화면이 남아 있지 않게 한다.
@@ -63,6 +68,7 @@ function M.spawn(opts)
   local env = vim.tbl_extend('force', {}, opts.env or {})
   if opts.resume then
     env = vim.fn.environ()
+    env.NVIM = nil -- Let jobstart set the current server address, as for a new session.
     for key in pairs(env) do
       if key:match('^AGENT_SESSION_') or key:match('^AGENT_PARENT_')
         or key == 'CLAUDE_SESSION_ID' or key == 'CODEX_THREAD_ID' or key == 'CODEX_SESSION_ID' then env[key] = nil end
@@ -94,6 +100,7 @@ function M.spawn(opts)
       end
       if buf then
         vim.schedule(function()
+          require('config.agent.workspace').close_session(e)
           if vim.api.nvim_buf_is_valid(buf) then
             pcall(vim.api.nvim_buf_delete, buf, { force = true })
           end
@@ -125,6 +132,7 @@ function M.spawn(opts)
     parent_id = tonumber(opts.env and opts.env.AGENT_PARENT_ID),
   }
   M.registry[next_id] = entry
+  if opts.saved then require('config.agent.handoff').restore_resume(entry, opts.saved) end
 
   -- winbar 가 버퍼 변수로 이름을 읽는다(Task 5).
   vim.b[entry.buf].agent_name = entry.name
@@ -347,6 +355,7 @@ function M.done(o)
     end
     timer:stop()
     timer:close()
+    require('config.agent.workspace').close_session(target)
     if vim.api.nvim_buf_is_valid(buf) then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end

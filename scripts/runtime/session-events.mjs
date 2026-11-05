@@ -9,7 +9,8 @@ export function activityEvent(data, vendor, env = process.env, at = Date.now()) 
   const supported = vendor === 'claude' ? [...commonEvents, 'Notification', 'PostToolUseFailure', 'StopFailure']
     : vendor === 'codex' ? [...commonEvents, 'Interrupt'] : [];
   if (!env.NVIM || !env.AGENT_EVENT_TOKEN || !env.AGENT_EVENT_INSTANCE || !Number(env.AGENT_SESSION_ID)
-    || data.agent_id || data.agent_type || typeof data.session_id !== 'string' || !supported.includes(data.hook_event_name)) return null;
+    || data.agent_id || (data.agent_type && !(vendor === 'claude' && data.hook_event_name === 'SessionStart'))
+    || typeof data.session_id !== 'string' || !supported.includes(data.hook_event_name)) return null;
   let status = ({ SessionStart: 'idle', UserPromptSubmit: 'working', PreToolUse: 'working', PostToolUse: 'working',
     PermissionRequest: 'response_requested', Stop: 'idle', SessionEnd: 'unknown', Interrupt: 'interrupted', PostToolUseFailure: 'error', StopFailure: 'error' })[data.hook_event_name];
   if (data.hook_event_name === 'PreToolUse' && ['AskUserQuestion', 'request_user_input'].includes(data.tool_name)) status = 'response_requested';
@@ -20,7 +21,7 @@ export function activityEvent(data, vendor, env = process.env, at = Date.now()) 
   if (!status) return null;
   const saved = data.hook_event_name === 'SessionStart' && !env.AGENT_SESSION_ROLE
     ? resolveSessionModel({ ...env, AGENT_SESSION_VENDOR: vendor, CLAUDE_SESSION_ID: data.session_id,
-        CODEX_THREAD_ID: data.session_id, CODEX_SESSION_ID: data.session_id }, data)
+        CODEX_THREAD_ID: data.session_id, CODEX_SESSION_ID: data.session_id }, data, undefined, false)
     : undefined;
   return { saved, instance: env.AGENT_EVENT_INSTANCE, owner: Number(env.AGENT_SESSION_ID), token: env.AGENT_EVENT_TOKEN,
     at, cli_session: data.session_id, turn_id: data.turn_id, event: data.hook_event_name, status, source: `${vendor}:${data.hook_event_name}` };

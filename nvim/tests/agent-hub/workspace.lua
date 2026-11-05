@@ -1,8 +1,13 @@
 local config = vim.fn.stdpath('config')
 vim.opt.rtp:prepend(config)
-local runtime = require('config.agent.policy').installation().runtime
-local session_cli = runtime .. '/bin/session.mjs'
-if vim.fn.filereadable(session_cli) ~= 1 then session_cli = config .. '/../scripts/runtime/session.mjs' end
+local role_root = vim.fn.tempname() .. '-roles'
+vim.fn.mkdir(role_root .. '/bin', 'p')
+for _, file in ipairs(vim.fn.glob(config .. '/../scripts/runtime/*.mjs', false, true)) do
+  vim.fn.writefile(vim.fn.readfile(file, 'b'), role_root .. '/bin/' .. vim.fn.fnamemodify(file, ':t'), 'b')
+end
+local P = require('config.agent.policy')
+P.installation = function() return { runtime = role_root, mode = 'both', models = config .. '/../runtime/models.json' } end
+local session_cli = role_root .. '/bin/session.mjs'
 vim.o.hidden, vim.o.columns, vim.o.lines = true, 190, 48
 vim.env.AGENT_HUB_HOME = vim.fn.tempname() .. '-workspace'
 vim.env.AGENT_HUB_INSTANCE, vim.env.AGENT_HUB_REQUEST, vim.env.AGENT_HUB_MANAGED = nil, nil, nil
@@ -31,12 +36,16 @@ local ok, failure = xpcall(function()
   local e = assert(T.spawn({ agent = 'Codex', role = 'work', cwd = root, name = '작업 | E', cmd = cmd, env = { AGENT_PARENT_ID = tostring(c) } }))
   local orphan = assert(T.spawn({ agent = 'Codex', role = 'work', cwd = root, name = '고아', cmd = cmd, env = { AGENT_PARENT_ID = '999999' } }))
   W.refresh()
-  assert(#s.rows == 6, 'all sessions listed')
-  for i, id in ipairs({ a, b, d, c, e, orphan }) do assert(s.rows[i].entry.id == id, 'group order') end
+  assert(W.select(a, false)); W.refresh()
+  assert(#s.rows == 5, 'selected plan and children listed')
+  for i, id in ipairs({ a, b, d, c, orphan }) do assert(s.rows[i].entry.id == id, 'group order') end
   local rendered = vim.api.nvim_buf_get_lines(s.ai_buf, 0, -1, false)
-  assert(rendered[1]:find('● 계획 | A', 1, true) and rendered[5]:find('    ● 작업 | B', 1, true), 'dot before indented child name')
+  assert(rendered[1]:find('● 계획 | A', 1, true) and rendered[3]:find('    ● 작업 | B', 1, true), vim.inspect(rendered))
   assert(W.select(orphan, false), 'orphan remains selectable')
+  assert(W.select(a, false))
   local entry = T.registry[a]
+  entry.cli_session = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  assert(vim.system({ 'node', role_root .. '/bin/session-role.mjs', 'save', 'codex', entry.cli_session, 'plan' }, { env = { AI_SETTINGS_HOME = role_root } }):wait().code == 0)
   local task = T.registry[b].task_id
   local ns = vim.api.nvim_get_namespaces().agent_workspace_status
   for status, group in pairs({ working = 'Working', idle = 'Waiting', response_requested = 'Waiting', review_pending = 'Working',
@@ -45,9 +54,9 @@ local ok, failure = xpcall(function()
     W.refresh()
     local index
     for i, item in ipairs(s.rows) do if item.entry.id == a and item.instance.instance == H.id then index = i end end
-    local line = (index - 1) * 4
+    local line = s.rows[index].first - 1
     local marks = vim.api.nvim_buf_get_extmarks(s.ai_buf, ns, { line, 0 }, { line, -1 }, { details = true })
-    assert(#marks == 1 and marks[1][3] == 2, 'one dot before name')
+    assert(#marks == 1 and marks[1][3] == #'▼ ', 'one dot before name')
     assert(marks[1][4].hl_group == 'AgentStatus' .. group, 'status color: ' .. status)
   end
   entry.status, entry.activity_status = 'review_pending', nil
@@ -57,7 +66,7 @@ local ok, failure = xpcall(function()
   entry.activity_status = 'working'
   W.refresh()
   vim.api.nvim_set_current_win(s.ai)
-  for i, item in ipairs(s.rows) do if item.entry.id == a then vim.api.nvim_win_set_cursor(s.ai, { (i - 1) * 4 + 1, 0 }) end end
+  for i, item in ipairs(s.rows) do if item.entry.id == a then vim.api.nvim_win_set_cursor(s.ai, { item.first, 0 }) end end
   local notify, message = vim.notify
   vim.notify = function(value) message = value end
   vim.fn.maparg('?', 'n', false, true).callback()
@@ -77,7 +86,7 @@ local ok, failure = xpcall(function()
     local result
     vim.system({ vim.fn.exepath('node'), session_cli, action, argument }, {
       text = true, env = { NVIM = vim.v.servername, AGENT_SESSION_ID = tostring(owner), AGENT_TASK_ID = e.task_id,
-        AGENT_EVENT_INSTANCE = H.id, AGENT_EVENT_TOKEN = e.event_token },
+        AGENT_EVENT_INSTANCE = H.id, AGENT_EVENT_TOKEN = e.event_token, AI_SETTINGS_HOME = role_root },
     }, function(value) result = value end)
     assert(vim.wait(8000, function() return result ~= nil end, 10), 'CLI RPC timeout')
     assert(result.code == 0, (result.stdout or '') .. (result.stderr or ''))
@@ -101,15 +110,72 @@ local ok, failure = xpcall(function()
   assert(vim.api.nvim_buf_get_lines(s.docs_buf, 0, 1, false)[1]:find('[검토 대기] first', 1, true), 'document status precedes title')
   local items = R.items()
   local first, second = items[1], items[2]
+  local list = vim.api.nvim_buf_get_lines(s.docs_buf, 0, -1, false)
+  assert(list[2] == '' and list[3] == '  ' .. T.registry[a].name and list[4] == ''
+    and list[6] == '' and list[7] == '  ' .. T.registry[a].name and list[8] == '', 'parent and own plan titles with spacing')
+  local get_items = R.items
+  R.items = function()
+    local copy = vim.deepcopy(items)
+    copy[1].owner, copy[1].task_id, copy[1].parent_id = d, T.registry[d].task_id, a
+    return copy
+  end
+  W.refresh()
+  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  ' .. T.registry[a].name, 'review parent title')
+  R.items = function()
+    local copy = vim.deepcopy(items)
+    copy[1].parent_id = c
+    return copy
+  end
+  W.refresh()
+  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  계획 제목 확인 불가', 'unverified parent')
+  for _, change in ipairs({
+    function(item) item.owner = 999999 end,
+    function(item) item.task_id = 'wrong-task' end,
+    function(item) item.parent_id = nil end,
+    function(item) item.owner, item.task_id, item.parent_id = orphan, T.registry[orphan].task_id, 999999 end,
+    function(item) item.parent_id = b end,
+  }) do
+    R.items = function()
+      local copy = vim.deepcopy(items)
+      change(copy[1])
+      return copy
+    end
+    W.refresh()
+    assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  계획 제목 확인 불가', 'missing or invalid identity')
+  end
+  local snapshot = H.snapshot
+  for _, change in ipairs({
+    function(plan) plan.selecting = true end,
+    function(plan) plan.name = '' end,
+  }) do
+    R.items = get_items
+    H.snapshot = function()
+      local result = snapshot()
+      for _, session in ipairs(result.entries) do if session.id == a then change(session) end end
+      return result
+    end
+    W.refresh()
+    assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  계획 제목 확인 불가', 'unavailable plan title')
+  end
+  H.snapshot = snapshot
+  R.items = get_items; W.refresh()
+  vim.api.nvim_win_set_cursor(s.docs, { 5, 0 })
+  R.items = function() return { items[2], items[1] } end
+  W.refresh()
+  assert(vim.api.nvim_win_get_cursor(s.docs)[1] == 1, 'cursor follows the same document after reorder')
+  R.items = get_items; W.refresh()
+  assert(vim.api.nvim_win_get_cursor(s.docs)[1] == 5, 'cursor follows the document when order is restored')
   assert(vim.wo[s.docs].wrap and vim.wo[s.docs].linebreak and not vim.wo[s.ai].wrap, 'only document list wraps')
-  assert(vim.api.nvim_win_text_height(s.docs, { start_row = 3, end_row = 3 }).all > 1, 'long document title wraps')
+  assert(vim.api.nvim_win_text_height(s.docs, { start_row = 4, end_row = 4 }).all > 1, 'long document title wraps')
   vim.api.nvim_set_current_win(s.docs)
-  vim.api.nvim_win_set_cursor(s.docs, { 4, 0 })
+  vim.api.nvim_win_set_cursor(s.docs, { 2, 0 })
+  vim.fn.maparg('j', 'n', false, true).callback()
+  assert(vim.api.nvim_win_get_cursor(s.docs)[1] == 5, 'keyboard skips document spacing')
   vim.fn.maparg('<CR>', 'n', false, true).callback()
   assert(s.document == second.id, 'Enter selects wrapped document')
   assert(W.select_review(first.id))
   vim.api.nvim_set_current_win(s.body)
-  vim.api.nvim_win_set_cursor(s.docs, { 4, 0 })
+  vim.api.nvim_win_set_cursor(s.docs, { 5, 0 })
   local send, sent = T.send
   T.send = function(id, text) sent = { id, text }; return true end
   W.decision('approved')
@@ -140,6 +206,54 @@ local ok, failure = xpcall(function()
   assert(A.receive(event):match('^OK') and T.registry[b].status == 'idle')
   event.at, event.token, event.cli_session = event.at + 1, T.registry[b].event_token, 'subagent'
   assert(A.receive(event):match('^FAIL'))
+  local resumed = T.registry[orphan]
+  resumed.resume = 'resume'
+  assert(W.select(orphan, false) and vim.wo[s.chat].winbar == '  세션 선택 중')
+  W.refresh()
+  local function resume_row()
+    for i, item in ipairs(s.rows) do
+      if item.entry.id == orphan then
+        local line = item.first - 1
+        return item.entry, vim.api.nvim_buf_get_lines(s.ai_buf, line, line + 2, false)
+      end
+    end
+    error('resumed session row disappeared')
+  end
+  local pending, pending_lines = resume_row()
+  assert(pending.selecting and pending.name == '세션 선택 중' and pending_lines[2] == '', 'picker has no model line')
+  local row_count = #s.rows
+  local prompt = { owner = orphan, instance = H.id, token = resumed.event_token, at = event.at + 2,
+    status = 'working', event = 'UserPromptSubmit', cli_session = '12345678-1234-1234-1234-123456789abc', turn_id = 'current' }
+  assert(A.receive(prompt):match('^OK'))
+  assert(not resume_row().selecting, 'exact activity identity resolves the picker state')
+  local start = vim.tbl_extend('force', prompt, { at = prompt.at - 1, status = 'idle', event = 'SessionStart',
+    saved = { id = prompt.cli_session, title = '계획 | 재개', role = 'plan', model = 'gpt-6.1-sol' } })
+  assert(A.receive(start):match('^OK'), 'late start restores the selected session')
+  assert(resumed.name == '계획 | 재개' and resumed.role == 'plan' and resumed.model == 'gpt-6.1-sol')
+  local restored, restored_lines = resume_row()
+  assert(#s.rows == row_count and restored.name == resumed.name and restored_lines[2]:find(resumed.model, 1, true)
+    and vim.wo[s.chat].winbar == '  ' .. resumed.name, 'saved metadata updates the same row and chat title')
+  assert(resumed.event_at == prompt.at and resumed.activity_status == 'working' and resumed.active_turn == 'current')
+  assert(A.receive(start):match('^FAIL'), 'duplicate start remains stale')
+  start.at, start.saved = prompt.at + 1, { id = prompt.cli_session, model = 'gpt-6.1-terra' }
+  assert(A.receive(start):match('^OK') and resumed.name == '계획 | 재개' and resumed.role == 'plan'
+    and resumed.model == 'gpt-6.1-terra', 'model-only metadata preserves verified name and role')
+  start.at, start.saved = start.at + 1, { id = prompt.cli_session, title = '사용자가 바꾼 이름' }
+  assert(A.receive(start):match('^OK') and resumed.name == '사용자가 바꾼 이름' and resumed.role == 'plan'
+    and resumed.model == 'gpt-6.1-terra', 'renamed title preserves verified role and model')
+  local managed = vim.deepcopy(resumed)
+  managed.id, managed.resume, managed.role = 987654, nil, 'work'
+  managed.cli_session = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+  managed.event_at, managed.session_start_at, managed.active_turn = prompt.at, nil, 'current'
+  managed.status, managed.activity_status = 'working', 'working'
+  T.registry[managed.id] = managed
+  local late = { owner = managed.id, instance = H.id, token = managed.event_token, at = prompt.at - 1,
+    status = 'idle', event = 'SessionStart', cli_session = managed.cli_session, turn_id = 'current' }
+  assert(A.receive(late):match('^OK') and managed.event_at == prompt.at and managed.status == 'working' and managed.active_turn == 'current')
+  assert(require('config.agent.handoff').verified_role(managed), 'late managed start saves its assigned role')
+  assert(A.receive(late):match('^FAIL'), 'late managed start cannot be replayed')
+  T.registry[managed.id] = nil
+  W.refresh()
   vim.api.nvim_set_current_win(s.body)
   local hide = vim.fn.maparg('<C-d>', 'n', false, true).callback
   hide(); W.refresh(); assert(not s.body, 'user hide survives refresh')
@@ -170,4 +284,5 @@ local ok, failure = xpcall(function()
   print('PASS workspace: layout, hidden jobs, exact review ownership, revision, completion, stale events, resize, corruption')
 end, debug.traceback)
 for _, e in ipairs(T.entries()) do pcall(vim.fn.jobstop, e.chan) end
+vim.fn.delete(role_root, 'rf')
 if not ok then error(failure) end

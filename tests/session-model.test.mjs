@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { activityEvent } from '../scripts/runtime/session-events.mjs';
 import { resolveSessionModel } from '../scripts/runtime/session-model.mjs';
+import { saveRole } from '../scripts/runtime/session-role.mjs';
 test('exact identity and latest model are required', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-model-'));
   try {
@@ -12,14 +13,14 @@ test('exact identity and latest model are required', () => {
     const dir = path.join(root, 'sessions', '2026'); fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `rollout-${id}.jsonl`);
     const write = records => fs.writeFileSync(file, records.map(JSON.stringify).join('\n'));
-    const env = { CODEX_HOME: root, CODEX_SESSION_ID: id, CODEX_THREAD_ID: id };
+    const env = { AI_SETTINGS_HOME: root, CODEX_HOME: root, CODEX_SESSION_ID: id, CODEX_THREAD_ID: id };
     fs.writeFileSync(path.join(root, 'session_index.jsonl'), JSON.stringify({ id, thread_name: '계획 | 테스트' }));
     write([{ type: 'session_meta', payload: { id } }, { type: 'turn_context', payload: { model: 'gpt-6.1-sol' } }]);
     assert.deepEqual(resolveSessionModel(env), { model: 'gpt-6.1-sol', role: 'plan', title: '계획 | 테스트', id });
     fs.appendFileSync(file, '\n' + JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-6-luna' } }));
     assert.deepEqual(resolveSessionModel(env), { model: 'gpt-6-luna', role: 'plan', title: '계획 | 테스트', id });
     fs.writeFileSync(path.join(root, 'session_index.jsonl'), JSON.stringify({ id, thread_name: 'other 계획 | 테스트' }));
-    assert.equal(resolveSessionModel(env).role, undefined);
+    assert.equal(resolveSessionModel(env).role, 'plan');
     assert.equal(resolveSessionModel({ ...env, CODEX_THREAD_ID: 'wrong' }), undefined);
     write([{ type: 'session_meta', payload: { id: 'different' } }, { type: 'turn_context', payload: { model: 'gpt-6.1-sol' } }]);
     assert.equal(resolveSessionModel(env), undefined);
@@ -33,17 +34,40 @@ test('Claude resume hook uses the selected ID and translates stored model names'
     const id = '12345678-1234-1234-1234-123456789abc';
     const dir = path.join(root, 'projects', 'old-worktree');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, id + '.jsonl'), [
+    const transcript = path.join(dir, id + '.jsonl');
+    fs.writeFileSync(transcript, [
       { sessionId: id, type: 'custom-title', customTitle: '계획 | 과거 작업' },
-      { sessionId: id, type: 'assistant', message: { model: 'claude-opus-5-5' } }
+      { sessionId: id, type: 'assistant', message: { model: 'claude-opus-5-5' } },
+      { sessionId: id, type: 'assistant', message: { model: '<synthetic>' } }
     ].map(JSON.stringify).join('\n'));
     const env = { NVIM: 'server', AGENT_EVENT_TOKEN: 'token', AGENT_EVENT_INSTANCE: 'instance',
-      AGENT_SESSION_ID: '1', CLAUDE_CONFIG_DIR: root };
+      AGENT_SESSION_ID: '1', AI_SETTINGS_HOME: root, CLAUDE_CONFIG_DIR: root };
     const hook = { session_id: id, hook_event_name: 'SessionStart', source: 'resume' };
     assert.deepEqual(activityEvent(hook, 'claude', env).saved,
       { id, title: '계획 | 과거 작업', role: 'plan', model: 'opus' });
+    saveRole('claude', id, 'plan', env); // Receiver accepted the first event.
     assert.deepEqual(activityEvent({ ...hook, session_title: '리뷰 | 과거 작업', model: 'claude-sonnet-5-5' }, 'claude', env).saved,
-      { id, title: '리뷰 | 과거 작업', role: 'review', model: 'sonnet' });
-    assert.equal(activityEvent({ ...hook, session_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }, 'claude', env).saved, undefined);
+      { id, title: '리뷰 | 과거 작업', role: 'plan', model: 'sonnet' });
+    const named = { ...hook, agent_type: 'planner', transcript_path: transcript, model: 'unrecognized' };
+    assert.deepEqual(activityEvent(named, 'claude', { ...env, CLAUDE_CONFIG_DIR: path.join(root, 'absent') }).saved,
+      { id, title: '계획 | 과거 작업', role: 'plan', model: 'opus' });
+    assert.equal(activityEvent({ ...named, agent_id: 'child' }, 'claude', env), null);
+    const absent = { ...hook, session_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' };
+    assert.equal(activityEvent({ ...absent, transcript_path: transcript }, 'claude', env).saved, undefined);
+    assert.deepEqual(activityEvent({ ...absent, model: 'claude-haiku-4-5' }, 'claude', env).saved,
+      { id: absent.session_id, title: undefined, role: undefined, model: 'haiku' });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('confirmed role survives title changes and is isolated by vendor', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'role-model-'));
+  try {
+    const id = '12345678-1234-1234-1234-123456789abc';
+    const env = { AI_SETTINGS_HOME: root, CODEX_HOME: root, CODEX_THREAD_ID: id, AGENT_SESSION_VENDOR: 'codex' };
+    const records = [{ type: 'session_meta', payload: { id } }];
+    const first = resolveSessionModel(env, undefined, { records, index: JSON.stringify({ id, thread_name: '작업 | original' }) });
+    assert.equal(first.role, 'work');
+    const renamed = resolveSessionModel(env, undefined, { records, index: JSON.stringify({ id, thread_name: '계획 | renamed' }) });
+    assert.equal(renamed.role, 'work');
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

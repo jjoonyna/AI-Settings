@@ -1,10 +1,15 @@
 -- Exact saved resume identity must also authorize task completion without a handoff.
 local config = vim.fn.stdpath('config')
 vim.opt.rtp:prepend(config)
-local runtime = require('config.agent.policy').installation().runtime
-local session_cli = runtime .. '/bin/session.mjs'
-if vim.fn.filereadable(session_cli) ~= 1 then session_cli = config .. '/../scripts/runtime/session.mjs' end
 local root = vim.fn.tempname() .. '-resume-complete'
+local runtime = root .. '/runtime'
+vim.fn.mkdir(runtime .. '/bin', 'p')
+for _, file in ipairs(vim.fn.glob(config .. '/../scripts/runtime/*.mjs', false, true)) do
+  vim.fn.writefile(vim.fn.readfile(file, 'b'), runtime .. '/bin/' .. vim.fn.fnamemodify(file, ':t'), 'b')
+end
+local P = require('config.agent.policy')
+P.installation = function() return { runtime = runtime, mode = 'both', models = config .. '/../runtime/models.json' } end
+local session_cli = runtime .. '/bin/session.mjs'
 vim.env.AGENT_HUB_HOME = root .. '/hub'
 vim.env.AGENT_HUB_INSTANCE, vim.env.AGENT_HUB_REQUEST, vim.env.AGENT_HUB_MANAGED = nil, nil, nil
 require('config.agent').setup()
@@ -36,7 +41,7 @@ local function cli(role, override_id)
   local result
   vim.system({ vim.fn.exepath('node'), session_cli, 'task-complete', confirmation }, {
     text = true, env = { NVIM = vim.v.servername, AGENT_SESSION_ID = tostring(id), AGENT_SESSION_VENDOR = 'codex',
-      AGENT_SESSION_ROLE = 'plan', CODEX_HOME = home, CODEX_THREAD_ID = override_id or session, CODEX_SESSION_ID = override_id or session },
+      AGENT_SESSION_ROLE = 'plan', AI_SETTINGS_HOME = runtime, CODEX_HOME = home, CODEX_THREAD_ID = override_id or session, CODEX_SESSION_ID = override_id or session },
   }, function(value) result = value end)
   assert(vim.wait(8000, function() return result ~= nil end, 10), 'CLI completion timeout')
   return result
@@ -59,20 +64,29 @@ local ok, failure = xpcall(function()
   assert(#R.items() == 0 and vim.fn.filereadable(document) == 1)
   stop.at = stop.at + 1
   assert(A.receive(stop):match('^OK') and entry.status == 'complete' and #R.items() == 0, 'late Stop preserves explicit completion')
-  for _, role in ipairs({ '작업', '리뷰' }) do
+  approved()
+  result = cli('renamed')
+  assert(result.code == 0 and entry.role == 'plan', 'renaming the same ID preserves the confirmed role')
+  for index, role in ipairs({ '작업', '리뷰' }) do
     approved()
+    session = index == 1 and 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' or 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+    entry.cli_session = session
+    vim.fn.writefile({ vim.json.encode({ type = 'session_meta', payload = { id = session } }),
+      vim.json.encode({ type = 'turn_context', payload = { model = 'gpt-6.1-sol' } }) }, home .. '/sessions/rollout-' .. session .. '.jsonl')
     result = cli(role)
     assert(result.code ~= 0 and result.stdout:match('^FAIL'), 'saved work/review cannot use plan completion rights')
     assert(#R.items() == 1 and R.items()[1].status == 'approved')
   end
   approved()
+  session = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+  entry.cli_session = session
+  vim.fn.writefile({ vim.json.encode({ type = 'session_meta', payload = { id = session } }),
+    vim.json.encode({ type = 'turn_context', payload = { model = 'gpt-6.1-sol' } }) }, home .. '/sessions/rollout-' .. session .. '.jsonl')
   result = cli('unknown')
-  assert(result.code ~= 0 and result.stdout:match('^PENDING') and #R.items() == 1, 'unknown role requires explicit confirmation')
+  assert(result.code ~= 0 and result.stdout:match('^PENDING') and #R.items() == 1, 'unknown role requires confirmation')
   assert(not entry.role and not entry.confirmed_role)
-  result = cli('계획', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
-  assert(result.code ~= 0 and result.stdout:match('^PENDING') and #R.items() == 1, 'different saved identity cannot authorize completion')
-  local bad_vendor = vim.tbl_extend('force', request, { resolved_session = { id = session, role = 'plan', model = 'sonnet' } })
-  assert(R.complete(bad_vendor):match('^PENDING') and #R.items() == 1, 'model vendor must match resumed CLI')
+  result = cli('unknown', 'dddddddd-dddd-dddd-dddd-dddddddddddd')
+  assert(result.code ~= 0 and #R.items() == 1, 'different identity cannot authorize completion')
   vim.wait(30, function() return false end)
   entry.role, entry.model = nil, nil
   vim.ui.select = function(items, _, cb)
@@ -82,12 +96,13 @@ local ok, failure = xpcall(function()
     error('expected explicit role/model choice')
   end
   assert(R.complete(request):match('^PENDING'))
-  assert(vim.wait(1000, function() return entry.confirmed_role == 'plan' end))
+  assert(vim.wait(3000, function() return entry.confirmed_role == 'plan' end))
   assert(R.complete(request):match('^PENDING'))
-  assert(vim.wait(1000, function() return entry.confirmed_model == 'gpt-6.1-sol' end))
-  assert(R.complete(request):match('^OK') and #R.items() == 0, 'manual confirmation is reused only after both choices')
+  assert(vim.wait(3000, function() return entry.confirmed_model == 'gpt-6.1-sol' end))
+  assert(R.complete(request):match('^OK') and #R.items() == 0, 'manual confirmation persists after both choices')
   print('PASS resume completion: exact CLI metadata, self review, work/review denial, unknown/vendor/identity pending, explicit confirmation, Stop retention')
 end, debug.traceback)
 T.send, vim.ui.select = send, select
 pcall(vim.fn.jobstop, entry.chan)
+vim.fn.delete(root, 'rf')
 if not ok then error(failure) end

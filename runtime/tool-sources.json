@@ -5,5 +5,6 @@
   { "name": "frontend-design", "cacheName": "anthropic-skills", "url": "https://github.com/anthropics/skills.git", "ref": "main", "commit": "ca45fc496a3436251f191354091d557da31c15b5", "paths": ["skills/frontend-design"] },
   { "name": "ponytail", "url": "https://github.com/DietrichGebert/ponytail.git", "ref": "main", "commit": "96608e078b2d5ea607c5c3b8b5a54d1c1fba6846", "paths": ["skills/ponytail"] },
   { "name": "refactoring", "cacheName": "agent-rules-books", "url": "https://github.com/ciembor/agent-rules-books.git", "ref": "main", "commit": "893a88a6fce3a80c565bf39ac65021b43a8b2990", "paths": ["refactoring"] },
-  { "name": "working-effectively-with-legacy-code", "cacheName": "agent-rules-books", "url": "https://github.com/ciembor/agent-rules-books.git", "ref": "main", "commit": "893a88a6fce3a80c565bf39ac65021b43a8b2990", "paths": ["working-effectively-with-legacy-code"] }
+  { "name": "working-effectively-with-legacy-code", "cacheName": "agent-rules-books", "url": "https://github.com/ciembor/agent-rules-books.git", "ref": "main", "commit": "893a88a6fce3a80c565bf39ac65021b43a8b2990", "paths": ["working-effectively-with-legacy-code"] },
+  {"name":"superpowers","url":"https://github.com/obra/superpowers.git","ref":"main","commit":"896224c4b1879920ab573417e68fd51d2ccc9072","bundle":"skills"}
 ]

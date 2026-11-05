@@ -15,9 +15,9 @@ Describe '저장소 내용 검사' {
     (Get-ChildItem -LiteralPath "$Repo\claude\agents" -Filter *.md).Count | Should -Be 5
     (Get-ChildItem -LiteralPath "$Repo\codex" -Filter *.config.toml).Count | Should -Be 7
   }
-  It 'plugins.json 이 3개 플러그인을 선언한다' {
+  It 'plugins.json 이 중복 Superpowers 없이 2개 플러그인을 선언한다' {
     $p = Get-Content -LiteralPath "$Repo\claude\plugins.json" -Raw -Encoding UTF8 | ConvertFrom-Json
-    $p.plugins.Count | Should -Be 3
+    $p.plugins.Count | Should -Be 2
     $p.marketplaces.'claude-plugins-official' | Should -Be 'anthropics/claude-plugins-official'
   }
   It '역할 프로필은 모델을 고정하지 않고 중앙 목록을 사용한다' {

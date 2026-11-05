@@ -7,18 +7,35 @@ function M.receive(o)
   local e = require('config.agent.terminal').registry[tonumber(o.owner)]
   if not e or o.instance ~= hub.id or o.token ~= e.event_token or e.exit_code ~= nil
     or type(o.at) ~= 'number' or o.at < e.event_started or o.at > os.time() * 1000 + 10000
-    or o.at <= (e.event_at or 0) or not M.labels[o.status] or o.status == 'complete' or o.status == 'review_pending' then
+    or not M.labels[o.status] or o.status == 'complete' or o.status == 'review_pending' then
     return 'FAIL: 오래되거나 다른 세션의 상태 이벤트'
   end
-  if o.cli_session then
-    if e.cli_session and e.cli_session ~= o.cli_session then return 'FAIL: CLI 세션 불일치' end
-    e.cli_session = o.cli_session
-    if e.resume and o.event == 'SessionStart' then
-      require('config.agent.handoff').restore_resume(e, o.saved)
+  if o.cli_session and e.cli_session and e.cli_session ~= o.cli_session then return 'FAIL: CLI 세션 불일치' end
+  local delayed = o.at <= (e.event_at or 0)
+  if o.event == 'SessionStart' and o.at <= (e.session_start_at or 0) then return 'FAIL: duplicate start event' end
+  if delayed and not (o.event == 'SessionStart' and o.cli_session and e.cli_session == o.cli_session) then return 'FAIL: stale event' end
+  local new_prompt = o.event == 'UserPromptSubmit' or (o.source == 'explicit' and o.status == 'working')
+  if o.turn_id and e.active_turn and o.turn_id ~= e.active_turn and not new_prompt then return 'FAIL: previous CLI turn' end
+  if o.cli_session then e.cli_session = o.cli_session end
+  local saved = o.saved
+  local restore = e.resume and o.event == 'SessionStart' and o.cli_session and type(saved) == 'table'
+    and saved.id == o.cli_session and (saved.title or saved.model or saved.role) and o.at > (e.resume_metadata_at or 0)
+  if o.event == 'SessionStart' and o.cli_session then
+    e.session_start_at = o.at
+    local handoff = require('config.agent.handoff')
+    local role = e.resume and restore and saved.role or not e.resume and e.role
+    if role then handoff.save_role(e, role) end
+    if restore then
+      local metadata = vim.tbl_extend('keep', saved, { model = e.model })
+      handoff.restore_resume(e, metadata)
+      e.resume_metadata_at = o.at
     end
   end
-  local new_prompt = o.event == 'UserPromptSubmit' or (o.source == 'explicit' and o.status == 'working')
-  if o.turn_id and e.active_turn and o.turn_id ~= e.active_turn and not new_prompt then return 'FAIL: 이전 CLI turn 이벤트' end
+  if delayed then
+    hub.publish()
+    require('config.agent.workspace').refresh()
+    return 'OK: session metadata restored'
+  end
   if new_prompt then e.active_turn = o.turn_id end
   e.event_at, e.activity_status, e.status_source = o.at, o.status, o.source or 'explicit'
   if (e.status ~= 'complete' or new_prompt) and e.status ~= 'review_pending' then e.status = o.status end

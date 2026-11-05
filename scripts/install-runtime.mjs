@@ -186,6 +186,11 @@ export function install(options) {
       const template = JSON.parse(read(path.join(repo, 'claude/settings.json.tmpl')).replaceAll('{{CLAUDE_HOME_JSON}}', claudeHome.replaceAll('\\', '\\\\')));
       const legacyStop = template.hooks.Stop[0].hooks[0].command;
       template.model = catalog.defaults.claude;
+      const bundle = old.tools?.superpowers?.skills;
+      if (options.skipTools && !(Array.isArray(bundle) && bundle.length && bundle.every(name => {
+        const skill = path.join(claudeHome, 'skills', name, 'SKILL.md');
+        return Object.hasOwn(old.files || {}, skill) && present(skill) && !fs.lstatSync(skill).isSymbolicLink() && hash(fs.readFileSync(skill)) === old.files[skill];
+      }))) delete template.enabledPlugins['superpowers@claude-plugins-official'];
       template.hooks.Stop[0].hooks[0].command = 'node "' + path.join(root, 'bin/agent-done.js') + '"';
       const events = hooksFor('claude', [...commonEvents, 'Notification', 'PostToolUseFailure', 'StopFailure']);
       for (const [event, groups] of Object.entries(events)) template.hooks[event] = [...(template.hooks[event] || []), ...groups];
@@ -223,7 +228,7 @@ export function install(options) {
     if (options.skipTools && old.tools) {
       manifest.tools = old.tools;
       for (const [target, digest] of Object.entries(old.files || {})) {
-        if (toolHomes.some(h => Object.keys(old.tools).some(name => within(path.join(h, 'skills', name), target))) && present(target)) manifest.files[target] = digest;
+        if (toolHomes.some(h => Object.entries(old.tools).some(([name, tool]) => (tool.skills || [name]).some(skill => within(path.join(h, 'skills', skill), target)))) && present(target)) manifest.files[target] = digest;
       }
     }
     for (const source of sources) {
@@ -244,14 +249,22 @@ export function install(options) {
         if (!select || select.status !== 0) throw new Error('Cannot select pinned tool revision: ' + source.name);
         commit = { stdout: source.commit };
       }
-      const skill = source.paths.find(p => present(path.join(checkout, p, 'SKILL.md')));
-      if (!skill) throw new Error('Skill layout changed: ' + source.name);
-      for (const toolHome of toolHomes) {
-        const target = path.join(toolHome, 'skills', source.name);
-        copyTree(path.join(checkout, skill), target);
-        for (const license of ['LICENSE', 'LICENSE.txt', 'NOTICE', 'NOTICE.md']) if (present(path.join(checkout, license))) put(path.join(target, license), fs.readFileSync(path.join(checkout, license)));
+      if (source.bundle) {
+        const status = spawnSync('git', [...gitArgs, 'status', '--porcelain', '--', source.bundle, 'LICENSE'], { encoding: 'utf8', windowsHide: true });
+        if (status.status !== 0 || status.stdout.trim()) throw new Error('Dirty tool bundle: ' + source.name);
       }
-      manifest.tools ||= {}; manifest.tools[source.name] = { commit: commit.stdout.trim(), source: source.url };
+      const skills = source.bundle
+        ? fs.readdirSync(path.join(checkout, source.bundle), { withFileTypes: true }).filter(item => item.isDirectory() && present(path.join(checkout, source.bundle, item.name, 'SKILL.md'))).map(item => [item.name, path.join(source.bundle, item.name)])
+        : [[source.name, source.paths.find(p => present(path.join(checkout, p, 'SKILL.md')))]];
+      if (!skills.length || skills.some(([, skill]) => !skill)) throw new Error('Skill layout changed: ' + source.name);
+      for (const toolHome of toolHomes) {
+        for (const [name, skill] of skills) {
+          const target = path.join(toolHome, 'skills', name);
+          copyTree(path.join(checkout, skill), target);
+          for (const license of ['LICENSE', 'LICENSE.txt', 'NOTICE', 'NOTICE.md']) if (present(path.join(checkout, license))) put(path.join(target, license), fs.readFileSync(path.join(checkout, license)));
+        }
+      }
+      manifest.tools ||= {}; manifest.tools[source.name] = { commit: commit.stdout.trim(), source: source.url, ...(source.bundle ? { skills: skills.map(([name]) => name) } : {}) };
     }
     if (!options.skipTools && !options.skipToolDependencies) {
       if (!options.python || !present(options.python)) throw new Error('Python 3.11+ is required. Install Python or pass -Python <python.exe>.');

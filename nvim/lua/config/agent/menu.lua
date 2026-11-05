@@ -20,7 +20,19 @@ function M.pick(callback, mode)
   local function chosen(agent)
     if not agent then return end
     if mode ~= 'new' then
-      callback({ agent = agent.key, session = 'plan', resume = mode, cwd = vim.fn.getcwd() })
+      local cwd = vim.fn.getcwd()
+      if mode == 'continue' then callback({ agent = agent.key, session = 'plan', resume = mode, cwd = cwd }); return end
+      local script = policy.installation().runtime .. '/bin/session-list.mjs'
+      vim.system({ 'node', script, agent.key, cwd }, { text = true }, vim.schedule_wrap(function(result)
+        local ok, sessions = pcall(vim.json.decode, result.stdout or '')
+        if result.code ~= 0 or not ok or type(sessions) ~= 'table' then vim.notify('저장 세션을 읽을 수 없습니다', vim.log.levels.ERROR); return end
+        if #sessions == 0 then vim.notify('현재 폴더의 저장 세션이 없습니다', vim.log.levels.INFO); return end
+        vim.ui.select(sessions, { prompt = '이어서 할 세션', format_item = function(item)
+          return (item.title or '저장된 이름 확인 불가') .. '  [' .. item.id .. ']'
+        end }, function(item)
+          if item then callback({ agent = agent.key, session = 'plan', resume = mode, cwd = cwd, saved = item }) end
+        end)
+      end))
       return
     end
     local models = vim.tbl_filter(function(m) return m.vendor == agent.key end, policy.catalog().models)
@@ -41,14 +53,14 @@ end
 function M.open(mode)
   M.pick(function(o)
     local T = require('config.agent.terminal')
-    local title = o.resume and '재개 | 저장된 이름 확인 불가' or policy.title('plan', o.name)
+    local title = o.resume and (o.saved and o.saved.title or '재개 | 저장된 이름 확인 불가') or policy.title('plan', o.name)
     local cmd
-    if o.resume then cmd = policy.resume_command(o.agent, o.resume) else cmd = M.cmd_for(o.agent, 'plan', o.model, title) end
+    if o.resume then cmd = policy.resume_command(o.agent, o.resume, o.saved and o.saved.id) else cmd = M.cmd_for(o.agent, 'plan', o.model, title) end
     if not cmd then vim.notify('잘못된 실행 요청', vim.log.levels.ERROR); return end
     if vim.fn.executable(cmd[1]) ~= 1 then vim.notify('PATH에 ' .. cmd[1] .. ' 없음', vim.log.levels.ERROR); return end
     require('config.agent.workspace').open(false)
     local id, err = T.spawn({ agent = o.agent == 'codex' and 'Codex' or 'Claude', cmd = cmd, cwd = o.cwd,
-      name = title, resume = o.resume, role = not o.resume and 'plan' or nil, model = o.model, topic = o.name, session_name = not o.resume and title or nil,
+      name = title, resume = o.resume, saved = o.saved, role = not o.resume and 'plan' or nil, model = o.model, topic = o.name, session_name = not o.resume and title or nil,
       env = { AGENT_SESSION_ROLE = not o.resume and 'plan' or nil, AGENT_SESSION_MODEL = o.model, AGENT_SESSION_VENDOR = o.agent, AGENT_SESSION_TITLE = not o.resume and title or nil,
         AI_SETTINGS_HOME = policy.installation().runtime, IMPECCABLE_LIVE_COPY_AGENT = 'chat' } })
     if not id then vim.notify(tostring(err), vim.log.levels.ERROR) end

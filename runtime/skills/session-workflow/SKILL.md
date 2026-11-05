@@ -5,7 +5,7 @@ description: 계획·작업·읽기 전용 리뷰를 연결하고 모델 선택,
 
 # 세션 실행
 
-설치된 `~/.ai-settings/POLICY.md`와 `models.json`을 따른다. 사용자 홈은 실제 환경에서 찾는다. `~/.ai-settings/install.json`에서 설치 모드를 확인한다.
+설치된 `~/.ai-settings/POLICY.md`와 `models.json`을 따른다. Codex 계획 세션도 handoff로 별도 영구 작업·리뷰 세션을 열고 실패하면 보고하고 실행 경로를 복구한다. 이미 확인된 작업·리뷰 역할은 다시 확인하지 않는다. 사용자 홈은 실제 환경에서 찾는다. `~/.ai-settings/install.json`에서 설치 모드를 확인한다.
 
 설치된 `~/.ai-settings/bin/session.mjs`를 Node로 실행한다. 실제 설치 루트는 환경변수 `AI_SETTINGS_HOME`을 우선 사용한다. 구조화된 JSON 요청 파일을 프로젝트 `docs/` 아래에 쓰고 다음처럼 전달한다. 명령 경로는 실제 절대경로로 확장한다.
 

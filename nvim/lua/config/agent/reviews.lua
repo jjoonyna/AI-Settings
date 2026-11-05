@@ -90,6 +90,7 @@ function M.complete(o)
     local pending = require('config.agent.handoff').resolve_resume(parent, o.resolved_session)
     if pending then return pending end
   end
+  if not require('config.agent.handoff').verified_role(parent) then return 'FAIL: session role not verified' end
   if parent.role ~= 'plan' then return 'FAIL: 확인된 계획 세션만 작업 완료를 승인할 수 있습니다' end
   M.items()
   local data, kept = load(), {}

@@ -7,6 +7,7 @@ import { Frames, frame, executable } from '../scripts/runtime/app-proxy.mjs';
 import { validate, handoff, readThread } from '../scripts/runtime/app-session.mjs';
 import { install } from '../scripts/install-runtime.mjs';
 const id = '12345678-1234-1234-1234-123456789abc';
+const childId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const turnId = '12345678-1234-1234-1234-123456789abd';
 const otherTurnId = '12345678-1234-1234-1234-123456789abe';
 function fixture() {
@@ -23,12 +24,14 @@ test('parent identity, role, vendor, model ceiling and fields fail closed', () =
     for (const bad of [{...o,model:'gpt-6-astra',user_override:true},{...o,agent:'claude'}, {...o,session:'plan'}, {...o,parent_model:'gpt-6-luna'}, {...o,goal:''}, {...o,spec_doc:path.join(root,'missing')}]) assert.throws(() => validate(bad, env));
     assert.throws(() => validate(o, {...env,CODEX_SESSION_ID:'wrong'}));
     fs.writeFileSync(path.join(root, 'session_index.jsonl'), JSON.stringify({id,thread_name:'작업 | test'}));
+    assert.equal(validate(o, env).parent.role, 'plan');
+    fs.rmSync(path.join(root, 'state', 'session-roles', 'codex', id + '.json'));
     assert.throws(() => validate({...o,user_override:true}, env));
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
 test('server permissions verified before turn; errors retain created ID', async () => {
   const {root,env,o} = fixture(), calls=[]; let bad = true;
-  const open = async () => ({ userAgent:'codex-tui/0.154.0', close(){}, async request(method, params) { calls.push(method); if(method === 'thread/start') { assert.equal(params.sandbox,'danger-full-access'); assert.equal(params.approvalPolicy,'never'); assert.equal(params.config,undefined); return {thread:{id},model:o.model,cwd:root,sandbox:{type:bad?'workspaceWrite':'dangerFullAccess'},approvalPolicy:'never',approvalsReviewer:'auto_review'}; } if(method === 'turn/start') { const prompt=params.input[0].text; assert.ok(prompt.includes('읽기 전용 리뷰다. 코드, 문서 또는 파일을 수정·생성·삭제하지 않는다. 실제 변경 원문과 요구사항·검증 근거를 확인한다.')); return {turn:{id:turnId,status:'inProgress'}}; } return {}; } });
+  const open = async () => ({ userAgent:'codex-tui/0.154.0', close(){}, async request(method, params) { calls.push(method); if(method === 'thread/start') { assert.equal(params.sandbox,'danger-full-access'); assert.equal(params.approvalPolicy,'never'); assert.equal(params.config,undefined); return {thread:{id: childId},model:o.model,cwd:root,sandbox:{type:bad?'workspaceWrite':'dangerFullAccess'},approvalPolicy:'never',approvalsReviewer:'auto_review'}; } if(method === 'turn/start') { const prompt=params.input[0].text; assert.ok(prompt.includes('읽기 전용 리뷰다. 코드, 문서 또는 파일을 수정·생성·삭제하지 않는다. 실제 변경 원문과 요구사항·검증 근거를 확인한다.')); return {turn:{id:turnId,status:'inProgress'}}; } return {}; } });
   try { await assert.rejects(handoff(o,env,open), /created thread.*mismatch/); assert.deepEqual(calls,['thread/start']); bad=false; calls.length=0; assert.equal((await handoff(o,env,open)).turnId,turnId); assert.deepEqual(calls,['thread/start','thread/name/set','turn/start']); } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });
 test('Windows app cores choose the latest valid version and fall back to PATH', () => {
@@ -50,9 +53,9 @@ test('Windows app cores choose the latest valid version and fall back to PATH', 
 test('review requests full access without approval and explicit no-edit instruction without requiring MXC', async () => {
   const {root,env,o}=fixture(), calls=[];
   try {
-    const legacy=async()=>({userAgent:'codex-tui/0.154.0',close(){},async request(method,p){calls.push(method); if(method==='thread/start'){assert.equal(p.sandbox,'danger-full-access'); assert.equal(p.config,undefined); return {thread:{id},model:o.model,cwd:root,sandbox:{type:'dangerFullAccess'},approvalPolicy:'never',approvalsReviewer:'auto_review'};} if(method==='turn/start')return {turn:{id:turnId,status:'inProgress'}}; return {};}});
+    const legacy=async()=>({userAgent:'codex-tui/0.154.0',close(){},async request(method,p){calls.push(method); if(method==='thread/start'){assert.equal(p.sandbox,'danger-full-access'); assert.equal(p.config,undefined); return {thread:{id: childId},model:o.model,cwd:root,sandbox:{type:'dangerFullAccess'},approvalPolicy:'never',approvalsReviewer:'auto_review'};} if(method==='turn/start')return {turn:{id:turnId,status:'inProgress'}}; return {};}});
     await handoff(o,env,legacy); assert.deepEqual(calls,['thread/start','thread/name/set','turn/start']);
-    calls.length=0; const work=async()=>({userAgent:'codex-tui/0.154.0',close(){},async request(method,p){calls.push(method); if(method==='thread/start'){assert.equal(p.config,undefined); return {thread:{id},model:o.model,cwd:root,sandbox:{type:'workspaceWrite'},approvalPolicy:'on-request',approvalsReviewer:'auto_review'};} if(method==='turn/start')return {turn:{id:turnId,status:'inProgress'}}; return {};}});
+    calls.length=0; const work=async()=>({userAgent:'codex-tui/0.154.0',close(){},async request(method,p){calls.push(method); if(method==='thread/start'){assert.equal(p.config,undefined); return {thread:{id: 'cccccccc-cccc-cccc-cccc-cccccccccccc'},model:o.model,cwd:root,sandbox:{type:'workspaceWrite'},approvalPolicy:'on-request',approvalsReviewer:'auto_review'};} if(method==='turn/start')return {turn:{id:turnId,status:'inProgress'}}; return {};}});
     await handoff({...o,session:'work'},env,work); assert.deepEqual(calls,['thread/start','thread/name/set','turn/start']);
   } finally { fs.rmSync(root,{recursive:true,force:true}); }
 });

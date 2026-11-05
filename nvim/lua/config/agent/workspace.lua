@@ -30,24 +30,64 @@ local function lines(b, values)
     api.nvim_buf_set_lines(b, 0, -1, false, values)
     vim.bo[b].modifiable = false
     vim.bo[b].readonly = readonly
+    return true
   end
 end
 local function row(kind)
   local s = M.state
   if not s or not valid(s[kind]) then return end
-  local stride = kind == 'ai' and 4 or 3
-  return (kind == 'ai' and s.rows or s.reviews)[math.floor((api.nvim_win_get_cursor(s[kind])[1] - 1) / stride) + 1]
+  local line = api.nvim_win_get_cursor(s[kind])[1]
+  if kind == 'ai' then
+    for _, item in ipairs(s.rows) do if line >= item.first and line <= item.last then return item end end
+    return
+  end
+  return s.reviews[math.floor((line - 1) / 4) + 1]
 end
 local function notify(result)
   vim.notify(result, result:match('^FAIL') and vim.log.levels.WARN or vim.log.levels.INFO)
 end
+local function ensure_chat(s)
+  if valid(s.chat) then return true end
+  if not api.nvim_tabpage_is_valid(s.tab) then return false end
+  local anchor = valid(s.ai) and s.ai or api.nvim_tabpage_list_wins(s.tab)[1]
+  if not anchor then return false end
+  s.chat = api.nvim_open_win(s.empty, false, { split = 'right', win = anchor })
+  return true
+end
+function M.close_session(entry)
+  local s = M.state
+  if not s or s.selected ~= entry.id or not ensure_chat(s) then return end
+  local terminal = require('config.agent.terminal')
+  local function eligible(e)
+    return e and e.id ~= entry.id and not e.auto_close and e.exit_code == nil and api.nvim_buf_is_valid(e.buf)
+  end
+  local parent = terminal.registry[entry.parent_id]
+  local candidate = eligible(parent) and parent.role == 'plan' and parent or nil
+  local entries = terminal.entries()
+  if not candidate then
+    for _, e in ipairs(entries) do if eligible(e) and e.role == 'plan' then candidate = e; break end end
+  end
+  if not candidate then
+    for _, e in ipairs(entries) do if eligible(e) then candidate = e; break end end
+  end
+  if candidate then M.select(candidate.id, false)
+  else
+    s.selected = nil
+    api.nvim_win_set_buf(s.chat, s.empty)
+    vim.wo[s.chat].winbar = ''
+  end
+end
 function M.select(id, focus)
-  local s, e = M.state, require('config.agent.terminal').registry[id]
-  if not s or not e or not api.nvim_buf_is_valid(e.buf) then return false end
+  local terminal = require('config.agent.terminal')
+  local s, e = M.state, terminal.registry[id]
+  if not s or not e or not api.nvim_buf_is_valid(e.buf) or not ensure_chat(s) then return false end
+  local parent = e.role == 'plan' and e.id or ((e.role == 'work' or e.role == 'review') and e.parent_id)
+  s.expanded = parent and terminal.registry[parent] and terminal.registry[parent].role == 'plan' and parent or nil
   s.selected = id
   api.nvim_win_set_buf(s.chat, e.buf)
-  vim.wo[s.chat].winbar = '  ' .. e.name:gsub('%%', '%%%%')
+  vim.wo[s.chat].winbar = '  ' .. terminal.display_name(e):gsub('%%', '%%%%')
   if focus then api.nvim_set_current_win(s.chat) end
+  M.refresh()
   return true
 end
 local function select_ai()
@@ -124,8 +164,11 @@ function M.refresh()
   s.reviews, s.rows = items, {}
   local text, marks = {}, {}
   local instance = hub.snapshot()
-  local plans, children, ordered = {}, {}, {}
-  for _, e in ipairs(instance.entries) do if e.role == 'plan' then plans[e.id] = true end end
+  local plans, children, ordered, entries = {}, {}, {}, {}
+  for _, e in ipairs(instance.entries) do
+    entries[e.id] = e
+    if e.role == 'plan' then plans[e.id] = e end
+  end
   for _, e in ipairs(instance.entries) do
     if (e.role == 'work' or e.role == 'review') and plans[e.parent_id] then
       children[e.parent_id] = children[e.parent_id] or {}
@@ -135,20 +178,54 @@ function M.refresh()
   for _, e in ipairs(instance.entries) do
     if not ((e.role == 'work' or e.role == 'review') and plans[e.parent_id]) then
       table.insert(ordered, { entry = e, indent = '' })
-      for _, child in ipairs(children[e.id] or {}) do table.insert(ordered, { entry = child, indent = '  ' }) end
+      if s.expanded == e.id then
+        for _, child in ipairs(children[e.id] or {}) do table.insert(ordered, { entry = child, indent = '  ' }) end
+      end
     end
   end
+  local function aggregate(e)
+    local values = { activity_status(e) or 'unknown' }
+    for _, child in ipairs(children[e.id] or {}) do values[#values + 1] = activity_status(child) or 'unknown' end
+    local seen, all_complete = {}, true
+    for _, value in ipairs(values) do
+      value = status_groups[value] and value ~= 'review_pending' and value or 'unknown'
+      seen[value] = true
+      if value ~= 'complete' then all_complete = false end
+    end
+    if seen.working then return 'working' end
+    if all_complete then return 'complete' end
+    for _, value in ipairs({ 'error', 'interrupted', 'unknown', 'response_requested' }) do
+      if seen[value] then return value end
+    end
+    return 'idle'
+  end
+  local selection_ns = api.nvim_create_namespace('agent_workspace_selection')
+  api.nvim_buf_clear_namespace(s.ai_buf, selection_ns, 0, -1)
+  local selected_lines = {}
   for _, item in ipairs(ordered) do
     local e = item.entry
-    local prefix = (s.selected == e.id and '> ' or '  ') .. item.indent
+    if item.indent == '' and #text > 0 then text[#text + 1] = '' end
+    local has_children = children[e.id] and #children[e.id] > 0
+    local arrow = has_children and (s.expanded == e.id and '▼ ' or '▶ ') or '  '
+    local prefix = item.indent == '' and arrow or '    '
+    local first = #text + 1
     text[#text + 1] = prefix .. '● ' .. e.name
-    marks[#marks + 1] = { #text - 1, #prefix, activity_status(e) }
-    text[#text + 1] = '  ' .. item.indent .. (e.model or '모델 확인 불가')
-    text[#text + 1] = ''
-    text[#text + 1] = ''
-    s.rows[#s.rows + 1] = { key = instance.instance .. '/' .. e.id, entry = e, instance = instance }
+    local displayed = has_children and s.expanded ~= e.id and aggregate(e) or activity_status(e)
+    marks[#marks + 1] = { #text - 1, #prefix, displayed }
+    text[#text + 1] = e.selecting and '' or ('  ' .. item.indent .. (e.model or '모델 확인 불가'))
+    if s.selected == e.id then
+      selected_lines[#selected_lines + 1] = first
+      if valid(s.chat) then vim.wo[s.chat].winbar = '  ' .. e.name:gsub('%%', '%%%%') end
+    end
+    s.rows[#s.rows + 1] = { key = instance.instance .. '/' .. e.id, entry = e, instance = instance,
+      first = first, last = #text, arrow = has_children, displayed_status = displayed }
   end
   lines(s.ai_buf, #text > 0 and text or { 'n: 새 계획 세션', 'I: 기존 외부 세션 관리' })
+  for _, first in ipairs(selected_lines) do
+    for line = first - 1, first do
+      api.nvim_buf_set_extmark(s.ai_buf, selection_ns, line, 0, { end_row = line + 1, end_col = 0, hl_group = 'Visual', hl_eol = true, priority = 90 })
+    end
+  end
   api.nvim_buf_clear_namespace(s.ai_buf, status_ns, 0, -1)
   for _, mark in ipairs(marks) do
     api.nvim_buf_add_highlight(s.ai_buf, status_ns, 'AgentStatus' .. (status_groups[mark[3]] or 'Unknown'), mark[1], mark[2], mark[2] + #'●')
@@ -159,12 +236,17 @@ function M.refresh()
   for _, item in ipairs(items) do
     titles[#titles + 1] = (s.document == item.id and '> ' or '') .. '[' .. (review_labels[item.status] or '확인 불가') .. '] ' .. vim.fn.fnamemodify(item.path, ':t:r')
     titles[#titles + 1] = ''
-    titles[#titles + 1] = '  AI #' .. item.owner .. ' / ' .. item.task_id:sub(1, 10)
+    local owner = entries[item.owner]
+    local plan = owner and owner.task_id == item.task_id and (owner.role == 'plan' and owner
+      or ((owner.role == 'work' or owner.role == 'review') and owner.parent_id == item.parent_id and plans[item.parent_id]))
+    titles[#titles + 1] = '  ' .. (plan and not plan.selecting and plan.name and vim.trim(plan.name) ~= '' and plan.name or '계획 제목 확인 불가')
+    titles[#titles + 1] = ''
   end
   lines(s.docs_buf, #titles > 0 and titles or { '검토 문서 없음' })
+  local body_changed
   for _, item in ipairs(items) do
     if item.id == s.document then
-      lines(s.body_buf, vim.fn.filereadable(item.path) == 1 and vim.fn.readfile(item.path) or { '문서 파일을 읽을 수 없습니다: ' .. item.path })
+      body_changed = lines(s.body_buf, vim.fn.filereadable(item.path) == 1 and vim.fn.readfile(item.path) or { '문서 파일을 읽을 수 없습니다: ' .. item.path })
     end
   end
   M.layout()
@@ -172,7 +254,7 @@ function M.refresh()
   s.rendered_document = s.document
   for kind, key in pairs({ ai = ai_key or '', docs = doc_key or '' }) do
     for i, value in ipairs(kind == 'ai' and s.rows or items) do
-      if (value.key or value.id) == key and valid(s[kind]) then api.nvim_win_set_cursor(s[kind], { (i - 1) * (kind == 'ai' and 4 or 3) + 1, 0 }); break end
+      if (value.key or value.id) == key and valid(s[kind]) then api.nvim_win_set_cursor(s[kind], { kind == 'ai' and value.first or (i - 1) * 4 + 1, 0 }); break end
     end
   end
   if valid(current) and api.nvim_get_current_win() == current and current ~= s.ai and current ~= s.docs
@@ -181,6 +263,11 @@ function M.refresh()
   end
   if document_changed and valid(s.body) then
     api.nvim_win_call(s.body, function() vim.fn.winrestview((s.views or {})[s.document] or { lnum = 1, col = 0, topline = 1 }) end)
+  end
+  -- TextChanged does not fire for the review buffer while the terminal has focus.
+  local markdown = package.loaded['render-markdown']
+  if body_changed and valid(s.body) and markdown and markdown.render then
+    markdown.render({ buf = s.body_buf, win = s.body })
   end
 end
 function M.open(focus_list)
@@ -202,6 +289,13 @@ function M.open(focus_list)
       'Alt+h/j/k/l · Ctrl+w: 영역 이동', 'AgentInstances: 기존 외부 세션 관리' })
     api.nvim_win_set_buf(s.chat, s.empty)
     local function map(b, key, fn, desc) vim.keymap.set('n', key, fn, { buffer = b, silent = true, desc = desc }) end
+    local function toggle(r)
+      if r and r.arrow then
+        if s.expanded == r.entry.id then s.expanded = nil else s.expanded = r.entry.id end
+        M.refresh()
+      end
+    end
+    map(s.ai_buf, '<Space>', function() toggle(row('ai')) end, '계획 접기/펼치기')
     map(s.ai_buf, '<CR>', select_ai, '선택 AI 대화')
     map(s.ai_buf, 'n', function() require('config.agent.launcher').menu() end, '새 계획')
     map(s.ai_buf, 'I', function() require('config.agent.panel').open() end, '외부 세션 관리')
@@ -224,11 +318,11 @@ function M.open(focus_list)
     map(s.body_buf, '<C-d>', function() s.hide_body = true; if valid(s.body) then api.nvim_win_close(s.body, true); s.body = nil end end, '본문 숨김 (승인 아님)')
     for _, b in ipairs({ s.ai_buf, s.docs_buf, s.body_buf }) do
       map(b, '?', function()
-        local message = 'AI: Enter 대화 · n 새 작업 · I 외부 관리 | 문서: Enter 선택 · a 승인 · r 수정 | AgentDocuments/AgentDocument: 숨긴 영역 표시 · Alt+h/l 이동'
+        local message = 'AI: Space 접기/펼치기 · Enter 대화 · n 새 작업 · I 외부 관리 | 문서: Enter 선택 · a 승인 · r 수정 | AgentDocuments/AgentDocument: 숨긴 영역 표시 · Alt+h/l 이동'
         local r = b == s.ai_buf and row('ai') or nil
         if r then
-          local labels, e = require('config.agent.activity').labels, r.entry
-          message = message .. '\n상태: ' .. (labels[activity_status(e)] or labels.unknown)
+          local labels = require('config.agent.activity').labels
+          message = message .. '\n상태: ' .. (labels[r.displayed_status] or labels.unknown)
         end
         vim.notify(message)
       end, '작업 공간 도움말')
@@ -238,22 +332,45 @@ function M.open(focus_list)
       for key, delta in pairs({ j = 1, k = -1, ['<Down>'] = 1, ['<Up>'] = -1 }) do
         map(b, key, function()
           if not valid(s[kind]) then return end
-          local stride = kind == 'ai' and 4 or 3
+          local stride = 4
           local count = #(kind == 'ai' and s.rows or s.reviews)
+          if count == 0 then return end
           local index = math.floor((api.nvim_win_get_cursor(s[kind])[1] - 1) / stride) + 1
-          api.nvim_win_set_cursor(s[kind], { (math.max(1, math.min(count, index + delta)) - 1) * stride + 1, 0 })
+          if kind == 'ai' then
+            local current = row('ai')
+            index = current and (vim.fn.index(s.rows, current) + 1) or 0
+            if not current then
+              local line = api.nvim_win_get_cursor(s.ai)[1]
+              for i, item in ipairs(s.rows) do
+                if item.last < line then index = i else break end
+              end
+              if delta < 0 then index = index + 1 end
+            end
+          end
+          local target = math.max(1, math.min(count, index + delta))
+          api.nvim_win_set_cursor(s[kind], { kind == 'ai' and s.rows[target].first or (target - 1) * stride + 1, 0 })
         end, '목록 항목 이동')
       end
     end
     local group = api.nvim_create_augroup('agent_workspace', { clear = true })
     -- Observe the native mouse action instead of replacing user mouse/key mappings.
-    vim.on_key(function(key)
+    vim.on_key(function(key, typed)
+      if typed == "" then return end
       local mouse_key = api.nvim_replace_termcodes('<LeftMouse>', true, false, true)
       if key:sub(1, #mouse_key) ~= mouse_key then return end
+      local previous, mouse = api.nvim_get_current_win(), vim.fn.getmousepos()
+      local clicked
+      if mouse.winid == s.ai then
+        for _, item in ipairs(s.rows) do if mouse.line >= item.first and mouse.line <= item.last then clicked = item; break end end
+      end
       vim.schedule(function()
         if M.state ~= s then return end
-        local mouse = vim.fn.getmousepos()
-        if mouse.winid == s.ai then select_ai()
+        if mouse.winid == s.ai then
+          local r = clicked
+          if r and r.arrow and mouse.line == r.first and mouse.column <= 2 then
+            toggle(r)
+            if valid(previous) then api.nvim_set_current_win(previous) end
+          elseif r then M.select(r.entry.id, true) end
         elseif mouse.winid == s.docs then local r = row('docs'); if r then M.select_review(r.id) end end
       end)
     end, api.nvim_create_namespace('agent_workspace_mouse'))
@@ -283,6 +400,7 @@ end
 function M.active() return M.state and api.nvim_tabpage_is_valid(M.state.tab) end
 function M.spawn_window()
   if not M.active() then return false end
+  if not ensure_chat(M.state) then return false end
   api.nvim_set_current_tabpage(M.state.tab)
   api.nvim_set_current_win(M.state.chat)
   vim.cmd('enew')

@@ -56,11 +56,12 @@ function M.environment(extra)
   end
   return env
 end
-function M.resume_command(agent, mode)
+function M.resume_command(agent, mode, id)
   if mode ~= 'resume' and mode ~= 'continue' then return nil end
-  if agent == 'codex' then return mode == 'continue' and { 'codex', 'resume', '--last' } or { 'codex', 'resume' } end
+  if mode == 'resume' and (type(id) ~= 'string' or not id:match('^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$')) then return nil end
+  if agent == 'codex' then return { 'codex', 'resume', mode == 'continue' and '--last' or id } end
   if agent == 'claude' and M.installation().mode ~= 'codex' then
-    return { 'claude', mode == 'continue' and '--continue' or '--resume' }
+    return mode == 'continue' and { 'claude', '--continue' } or { 'claude', '--resume', id }
   end
 end
 -- Bash 허용 패턴·명령에서 백슬래시가 제거되므로 슬래시 경로를 쓴다

@@ -89,7 +89,10 @@ test('external design/PPT skills deploy independently with data, scripts and lic
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-tools-'));
   try {
     const home = path.join(temp, 'home');
-    const result = install({ home, nvim: path.join(temp, 'nvim'), mode: 'codex', toolCache: process.env.AI_SETTINGS_TOOL_CACHE, skipToolDependencies: true });
+    const options = { home, nvim: path.join(temp, 'nvim'), mode: 'both', toolCache: process.env.AI_SETTINGS_TOOL_CACHE, skipToolDependencies: true };
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude/settings.json'), JSON.stringify({ enabledPlugins: { 'superpowers@claude-plugins-official': true, personal: true } }));
+    const result = install(options);
     for (const name of ['ppt-master', 'impeccable', 'ui-ux-pro-max', 'frontend-design', 'ponytail', 'refactoring', 'working-effectively-with-legacy-code']) assert.ok(fs.existsSync(path.join(home, '.codex/skills', name, 'SKILL.md')), name);
     assert.ok(fs.readdirSync(path.join(home, '.codex/skills/ui-ux-pro-max/data')).length > 0);
     assert.ok(fs.existsSync(path.join(home, '.codex/skills/impeccable/scripts/impeccable.cmd')));
@@ -98,8 +101,24 @@ test('external design/PPT skills deploy independently with data, scripts and lic
     assert.ok(fs.existsSync(path.join(home, '.codex/skills/ponytail/LICENSE')));
     for (const name of ['refactoring', 'working-effectively-with-legacy-code']) assert.ok(fs.existsSync(path.join(home, '.codex/skills', name, 'LICENSE')), `${name} LICENSE`);
     const manifest = JSON.parse(fs.readFileSync(path.join(result.root, 'manifest.json')));
-    assert.equal(Object.keys(manifest.tools).length, 7);
+    assert.equal(Object.keys(manifest.tools).length, 8);
+    for (const name of manifest.tools.superpowers.skills) {
+      const codex = path.join(home, '.codex/skills', name), claude = path.join(home, '.claude/skills', name);
+      const compare = (a, b) => { for (const entry of fs.readdirSync(a, { withFileTypes: true })) { const x = path.join(a, entry.name), y = path.join(b, entry.name); if (entry.isDirectory()) compare(x, y); else assert.deepEqual(fs.readFileSync(x), fs.readFileSync(y)); } };
+      compare(codex, claude);
+      assert.ok(fs.existsSync(path.join(codex, 'LICENSE')));
+    }
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json'))).enabledPlugins['superpowers@claude-plugins-official'], false);
+    install(options);
+    install({ ...options, mode: 'codex' });
+    const restored = JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json')));
+    assert.equal(restored.enabledPlugins['superpowers@claude-plugins-official'], true);
+    assert.equal(restored.enabledPlugins.personal, true);
+    assert.ok(fs.existsSync(path.join(home, '.codex/skills/brainstorming/SKILL.md')));
+    assert.equal(fs.existsSync(path.join(home, '.claude/skills/brainstorming/SKILL.md')), false);
     assert.doesNotMatch(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8'), /AI-Settings[\\/]/);
+    install({ ...options, mode: 'both', skipTools: true });
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json'))).enabledPlugins['superpowers@claude-plugins-official'], true);
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 test('a corrupt local config rolls earlier file changes back', () => {
@@ -113,6 +132,24 @@ test('a corrupt local config rolls earlier file changes back', () => {
     assert.equal(fs.readFileSync(path.join(nvim, 'init.lua'), 'utf8'), '-- original editor');
     assert.equal(fs.readFileSync(path.join(home, '.claude/settings.json'), 'utf8'), '{invalid');
     assert.equal(fs.existsSync(path.join(home, '.ai-settings/manifest.json')), false);
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+test('skipTools preserves plugin without a managed Claude bundle', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-skip-bundle-'));
+  try {
+    const home = path.join(temp, 'home'), nvim = path.join(temp, 'nvim');
+    const settings = path.join(home, '.claude/settings.json'), skill = path.join(home, '.claude/skills/brainstorming/SKILL.md');
+    fs.mkdirSync(path.dirname(skill), { recursive: true });
+    fs.writeFileSync(skill, 'personal');
+    fs.writeFileSync(settings, JSON.stringify({ enabledPlugins: { 'superpowers@claude-plugins-official': true } }));
+    install({ home, nvim, mode: 'codex', skipTools: true });
+    const manifestPath = path.join(home, '.ai-settings/manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath));
+    manifest.tools = { superpowers: { skills: ['brainstorming', 'systematic-debugging'] } };
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    install({ home, nvim, mode: 'both', skipTools: true });
+    assert.equal(JSON.parse(fs.readFileSync(settings)).enabledPlugins['superpowers@claude-plugins-official'], true);
+    assert.equal(fs.readFileSync(skill, 'utf8'), 'personal');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 test('legacy folder junctions become copies without changing their source', () => {

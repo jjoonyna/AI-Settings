@@ -2,44 +2,77 @@ local M = {}
 local policy = require('config.agent.policy')
 local terminal = require('config.agent.terminal')
 
+local function role_record(parent, action, role)
+  local id = parent.cli_session
+  if type(id) ~= 'string' or not id:match('^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$') then return nil, false end
+  local vendor = parent.agent == 'Codex' and 'codex' or parent.agent == 'Claude' and 'claude'
+  if not vendor then return nil, false end
+  local root = policy.installation().runtime
+  local args = { 'node', root .. '/bin/session-role.mjs', action, vendor, id }
+  if role then args[#args + 1] = role end
+  local ok, result = pcall(function() return vim.system(args, { text = true, env = { AI_SETTINGS_HOME = root } }):wait() end)
+  if not ok or result.code ~= 0 then return nil, false end
+  local value = vim.trim(result.stdout or '')
+  return value ~= '' and value or nil, true
+end
+
+function M.save_role(parent, role)
+  return role_record(parent, 'save', role)
+end
+
 function M.restore_resume(parent, metadata)
   if type(metadata) ~= 'table' or not metadata.id or (parent.cli_session and parent.cli_session ~= metadata.id) then return end
   local vendor = parent.agent == 'Codex' and 'codex' or 'claude'
   local model = metadata.model and policy.model(metadata.model)
   parent.cli_session = metadata.id
-  parent.model = model and model.vendor == vendor and model.id or nil
-  parent.role = metadata.role
+  if model and model.vendor == vendor then parent.model = model.id end
+  local role, ok = role_record(parent, 'read')
+  parent.role = ok and role or nil
   if type(metadata.title) == 'string' and metadata.title ~= '' then
-    parent.role = metadata.role
     parent.name = metadata.title:gsub('[%c]', '')
     if parent.buf and vim.api.nvim_buf_is_valid(parent.buf) then vim.b[parent.buf].agent_name = parent.name end
   end
 end
 
 function M.resolve_resume(parent, metadata)
-  if metadata and metadata.id and parent.cli_session and metadata.id ~= parent.cli_session then return 'FAIL: 재개 세션 ID 불일치' end
+  if metadata and metadata.id and parent.cli_session and metadata.id ~= parent.cli_session then return 'FAIL: session ID mismatch' end
   M.restore_resume(parent, metadata)
+  local role, ok = role_record(parent, 'read')
+  if not ok then return 'FAIL: session identity or role record unavailable' end
+  parent.role = role
   local vendor = parent.agent == 'Codex' and 'codex' or 'claude'
   local current_model = parent.model or parent.confirmed_model
-  local current_role = parent.role or parent.confirmed_role
-  if not current_model or not current_role then
+  if not current_model or not role then
     local choices, prompt, field
-    if not current_role then
+    if not role then
       choices = { { id = 'plan', label = '계획' }, { id = 'work', label = '작업' }, { id = 'review', label = '리뷰' } }
       prompt, field = '현재 재개 세션의 역할 확인', 'confirmed_role'
     else
       choices = vim.tbl_filter(function(m) return m.vendor == vendor end, policy.catalog().models)
       prompt, field = '현재 재개 세션의 모델 확인', 'confirmed_model'
     end
+    local confirmed_id = parent.cli_session
     vim.schedule(function()
-      vim.ui.select(choices, { prompt = prompt .. ' (선택 후 요청 재시도)', format_item = function(m) return m.label end }, function(choice)
-        if choice then parent[field] = choice.id; vim.notify('확인됨: 현재 요청을 다시 실행하세요') end
+      vim.ui.select(choices, { prompt = prompt, format_item = function(m) return m.label end }, function(choice)
+        if choice and parent.cli_session == confirmed_id then
+          if field == 'confirmed_role' then
+            local saved, success = role_record(parent, 'save', choice.id)
+            if not success or saved ~= choice.id then vim.notify('역할 저장 실패', vim.log.levels.ERROR); return end
+          end
+          parent[field] = choice.id
+          vim.notify('확인됨: 현재 요청을 다시 실행하세요')
+        end
       end)
     end)
-    return 'PENDING: 현재 세션 정보를 확인한 뒤 현재 요청을 다시 실행하세요'
+    return 'PENDING: 현재 세션 정보를 확인한 뒤 요청을 다시 실행하세요'
   end
-  parent.model, parent.role = current_model, current_role
+  parent.model, parent.role = current_model, role
   parent.confirmed_model, parent.confirmed_role = nil, nil
+end
+
+function M.verified_role(parent)
+  local role, ok = role_record(parent, 'read')
+  return ok and role and role == parent.role
 end
 
 function M.build_prompt(o)
@@ -85,6 +118,7 @@ function M.receive(o)
     if pending then return pending end
     o.parent_model, o.parent_agent = parent.model, parent.agent == 'Codex' and 'codex' or 'claude'
   end
+  if not M.verified_role(parent) then return 'FAIL: session role not verified' end
   if parent.role ~= 'plan' then return 'FAIL: 계획 세션만 작업·리뷰를 위임할 수 있습니다' end
   local model, error = policy.validate(o)
   if not model then return 'FAIL: ' .. error end

@@ -53,11 +53,11 @@ with tempfile.TemporaryDirectory(prefix='ai-workspace-ui-') as folder:
             time.sleep(.03)
         raise AssertionError((code, lua("return {mouse=vim.fn.getmousepos(), mode=vim.api.nvim_get_mode().mode, error=vim.v.errmsg, selected=W.state.selected}")))
 
-    def click(kind, line):
+    def click(kind, line, col=2):
         position = lua(f"return vim.api.nvim_win_get_position(W.state.{kind})")
         # The workspace winbar occupies the first screen row of each pane.
-        rpc('nvim_input_mouse', ['left', 'press', '', 0, position[0] + line, position[1] + 2])
-        rpc('nvim_input_mouse', ['left', 'release', '', 0, position[0] + line, position[1] + 2])
+        rpc('nvim_input_mouse', ['left', 'press', '', 0, position[0] + line, position[1] + col])
+        rpc('nvim_input_mouse', ['left', 'release', '', 0, position[0] + line, position[1] + col])
 
     try:
         rpc('nvim_ui_attach', [190, 45, {'rgb': True, 'ext_linegrid': True}])
@@ -88,24 +88,78 @@ W.select(a,true)
         wait("return vim.api.nvim_get_current_win() == W.state.chat")
         rpc('nvim_input', ['<C-w>'])
         wait("return vim.api.nvim_get_mode().mode == 't'")
-        click('ai', 5)
+        # Native mouse coordinates: arrow only folds, title and model select.
+        # Compare rendered grid attributes for both selected text rows against an unselected row.
+        def selected_grid():
+            return lua("""local w=W.state.ai; local p=vim.api.nvim_win_get_position(w); local r=W.state.rows
+          local title=vim.fn.screenattr(p[1]+r[1].first+1,p[2]+8)
+          local model=vim.fn.screenattr(p[1]+r[1].last+1,p[2]+5)
+          local other=vim.fn.screenattr(p[1]+r[2].last+1,p[2]+5)
+          local tail1=vim.fn.screenattr(p[1]+r[1].first+1,p[2]+25)
+          local tail2=vim.fn.screenattr(p[1]+r[1].last+1,p[2]+25)
+          local other_tail=vim.fn.screenattr(p[1]+r[2].last+1,p[2]+25)
+          return title ~= other and model ~= other and tail1 ~= other_tail and tail2 ~= other_tail
+        """)
+        assert selected_grid()
+        for theme in ('light', 'dark'):
+            lua(f"vim.o.background='{theme}'; vim.api.nvim_exec_autocmds('ColorScheme', {{}}); W.refresh(); vim.cmd('redraw')")
+            assert selected_grid(), theme
+        click('ai', 1, 0)
+        wait("return #W.state.rows == 1")
+        assert lua("return W.state.selected == a and vim.api.nvim_get_current_win() == W.state.chat")
+        lua("W.refresh()")
+        assert lua("return #W.state.rows == 1")
+        time.sleep(.6)
+        click('ai', 1, 0)
+        wait("return #W.state.rows == 2")
+        click('ai', 4, 8)
         wait("return vim.api.nvim_win_get_buf(W.state.chat) == T.registry[b].buf")
-        click('ai', 1)
+        click('ai', 1, 6)
         wait("return vim.api.nvim_win_get_buf(W.state.chat) == T.registry[a].buf")
         assert lua("return require('config.agent.plan_preview').show({path=q,owner=a}):match('^OK') ~= nil")
-        click('docs', 4)
+        click('docs', 5)
         wait("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# Second'")
-        click('docs', 1)
+        click('docs', 4)
+        wait("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# First'")
+        click('docs', 6)
+        wait("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# Second'")
+        click('docs', 2)
         wait("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# First'")
         assert lua("return W.state.selected == a and vim.fn.jobwait({T.registry[b].chan},0)[1] == -1")
         rpc('nvim_ui_try_resize', [70, 30])
         time.sleep(.1)
         lua("W.refresh(); W.show('docs')")
-        click('docs', 4)
+        click('docs', 5)
         wait("return W.state.document == R.items()[2].id")
+        assert lua("T.registry[a].name = '계획 | a very long plan title for narrow wrapping'; W.refresh(); return vim.api.nvim_win_text_height(W.state.docs, {start_row=2,end_row=2}).all > 1")
         rpc('nvim_ui_try_resize', [190, 45])
         time.sleep(.1)
         assert lua("W.refresh(); return #vim.api.nvim_tabpage_list_wins(W.state.tab) == 4")
+        lua("""local cmd={vim.fn.exepath('node'),'-e','setInterval(()=>{},1000)'}
+review=assert(T.spawn({cmd=cmd,role='review',name='Review',env={AGENT_PARENT_ID=tostring(a)}}))
+c=assert(T.spawn({cmd=cmd,role='plan',name='C'}))
+d=assert(T.spawn({cmd=cmd,role='work',name='D',env={AGENT_PARENT_ID=tostring(c)}}))
+W.select(b,true); W.refresh()
+""")
+        def ai_line(session):
+            return lua(f"for _,r in ipairs(W.state.rows) do if r.entry.id == {session} then return r.first end end")
+        review_id, c_id, d_id = lua('return {review,c,d}')
+        click('ai', ai_line(review_id), 8)
+        wait('return W.state.selected == review and W.state.expanded == a')
+        time.sleep(.6)
+        click('ai', ai_line(c_id), 0)
+        wait('return W.state.expanded == c and W.state.selected == review')
+        time.sleep(.6)
+        click('ai', ai_line(d_id), 8)
+        wait('return W.state.selected == d and W.state.expanded == c')
+        assert lua('return vim.fn.jobwait({T.registry[b].chan},0)[1] == -1')
+        # Selecting a child from terminal input takes effect on the first click.
+        lua('W.select(b,true)')
+        rpc('nvim_input', ['<C-w>'])
+        wait("return vim.api.nvim_get_mode().mode == 't'")
+        time.sleep(.6)
+        click('ai', ai_line(review_id), 8)
+        wait('return W.state.selected == review and W.state.expanded == a')
         print('PASS embed UI: terminal input focus, AI/document mouse selection, independent selection, hidden live job, narrow/restore')
     finally:
         try:

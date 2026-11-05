@@ -6,7 +6,12 @@ return {
     opts = function(_, opts)
       opts.overrides = opts.overrides or {}
       opts.overrides.filetype = opts.overrides.filetype or {}
-      opts.overrides.filetype.agent_review_markdown = { anti_conceal = { enabled = false } }
+      opts.overrides.filetype.agent_review_markdown = {
+        anti_conceal = { enabled = false },
+        debounce = 0,
+        heading = { icons = { '' }, position = 'inline' },
+        win_options = { concealcursor = { rendered = 'nvic' } },
+      }
     end,
   },
   {

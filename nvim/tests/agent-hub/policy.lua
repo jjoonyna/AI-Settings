@@ -41,7 +41,14 @@ vim.fn.writefile({ '# Plan' }, dir .. '/docs/plan.md')
 local T = require('config.agent.terminal')
 local spawn = T.spawn
 local captured
-T.registry[88888] = { id = 88888, role = 'plan', model = 'gpt-6.1-sol', agent = 'Codex' }
+local root = dir .. '/roles'
+vim.fn.mkdir(root .. '/bin', 'p')
+vim.fn.writefile(vim.fn.readfile('scripts/runtime/session-role.mjs', 'b'), root .. '/bin/session-role.mjs', 'b')
+local prior_installation = P.installation
+P.installation = function() return { mode = 'both', runtime = root, models = vim.fn.getcwd() .. '/runtime/models.json' } end
+local cli_id = '12345678-1234-1234-1234-123456789abc'
+vim.system({ 'node', root .. '/bin/session-role.mjs', 'save', 'codex', cli_id, 'plan' }, { env = { AI_SETTINGS_HOME = root } }):wait()
+T.registry[88888] = { id = 88888, role = 'plan', model = 'gpt-6.1-sol', agent = 'Codex', cli_session = cli_id }
 T.spawn = function(opts) captured = opts; return 99999 end
 if vim.v.servername == '' then vim.fn.serverstart() end
 local request = { agent = 'codex', session = 'work', model = 'gpt-6-luna', parent_model = 'gpt-6.1-sol', parent_id = 88888,
@@ -54,7 +61,7 @@ assert(captured.env.AGENT_PARENT_ID == '88888')
 assert(captured.briefing:find('검증·완료 기준: 테스트 통과', 1, true))
 request.parent_model = 'gpt-6-astra'
 assert(handoff.receive(request):find('FAIL:', 1, true))
-T.spawn = spawn; T.registry[88888] = nil
+T.spawn = spawn; T.registry[88888] = nil; P.installation = prior_installation
 vim.fn.delete(dir, 'rf')
 local received
 local send = T.send

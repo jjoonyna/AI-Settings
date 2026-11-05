@@ -65,10 +65,10 @@ function M.consume(path)
   local ok, err = pcall(function()
     local menu = require('config.agent.menu')
     local policy = require('config.agent.policy')
-    local title = request.resume and '재개 | 저장된 이름 확인 불가' or policy.title(request.session, request.name)
+    local title = request.resume and (request.saved and request.saved.title or '재개 | 저장된 이름 확인 불가') or policy.title(request.session, request.name)
     local cmd = request.test_cmd
     if not cmd then
-      if request.resume then cmd = policy.resume_command(request.agent, request.resume)
+      if request.resume then cmd = policy.resume_command(request.agent, request.resume, request.saved and request.saved.id)
       else cmd = menu.cmd_for(request.agent, request.session, request.model, title) end
     end
     assert(cmd and vim.fn.executable(cmd[1]) == 1, '에이전트 실행 파일을 찾을 수 없습니다')
@@ -79,7 +79,7 @@ function M.consume(path)
       env = { AGENT_SESSION_ROLE = not request.resume and request.session or nil, AGENT_SESSION_MODEL = request.model, AGENT_SESSION_VENDOR = request.agent,
         AGENT_SESSION_TITLE = not request.resume and title or nil, AI_SETTINGS_HOME = policy.installation().runtime, IMPECCABLE_LIVE_COPY_AGENT = 'chat' },
       agent = request.agent == 'codex' and 'Codex' or (request.test_cmd and '테스트' or 'Claude'),
-      name = request.test_cmd and request.name or title, task_id = request.task_id, resume = request.resume,
+      name = request.test_cmd and request.name or title, task_id = request.task_id, resume = request.resume, saved = request.saved,
       role = not request.resume and request.session or nil, model = request.model, topic = not request.resume and request.name or nil,
       session_name = not request.test_cmd and not request.resume and title or nil,
       briefing = not request.test_cmd and not request.resume and M.context({ name = title, cwd = request.cwd, task_id = request.task_id, note = '공유 기록을 확인하세요' }, request) or nil,
@@ -107,7 +107,7 @@ function M.new(opts, callback)
   if not opts.test_cmd then
     if session ~= 'plan' then return '실패: 작업·리뷰는 AgentHandoff로 모델과 부모를 지정하세요' end
     if opts.resume then
-      if not require('config.agent.policy').resume_command(agent, opts.resume) then return '실패: 잘못된 재개 요청' end
+      if not require('config.agent.policy').resume_command(agent, opts.resume, opts.saved and opts.saved.id) then return '실패: 잘못된 재개 요청' end
     else
       local selected, why = require('config.agent.policy').validate({ agent = agent, session = session, model = model })
       if not selected then return '실패: ' .. why end
@@ -122,7 +122,7 @@ function M.new(opts, callback)
   local request = { action = 'server', instance = integrated and hub.id or id, root = hub.root(), cwd = cwd,
     window = 'agent-hub-' .. id, server = '\\\\.\\pipe\\agent-hub-' .. id,
     init = vim.fn.stdpath('config') .. '/init.lua', nvim = vim.v.progpath,
-    agent = agent, session = session, model = model, resume = opts.resume, name = opts.name or task.name, task_id = task.id,
+    agent = agent, session = session, model = model, resume = opts.resume, saved = opts.saved, name = opts.name or task.name, task_id = task.id,
     prompt = opts.prompt, plan_doc = opts.plan_doc, test_cmd = opts.test_cmd, no_ui = opts.no_ui }
   vim.fn.mkdir(vim.fn.fnamemodify(path, ':h'), 'p')
   local fd, err = vim.uv.fs_open(path, 'wx', 384)

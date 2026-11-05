@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolveSessionModel } from './session-model.mjs';
 import { connect } from './app-proxy.mjs';
+import { saveRole } from './session-role.mjs';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validate(o, env = process.env) {
@@ -33,6 +34,7 @@ export async function handoff(o, env = process.env, open = connect) {
     const result = await client.request('thread/start', { model: o.model, cwd: context.cwd, sandbox: o.session === 'review' ? 'danger-full-access' : 'workspace-write', approvalPolicy: o.session === 'review' ? 'never' : 'on-request', approvalsReviewer: 'auto_review', ephemeral: false });
     id = result?.thread?.id;
     checkSettings(result, o, context.cwd);
+    saveRole('codex', id, o.session, env);
     await client.request('thread/name/set', { threadId: id, name: context.title });
     const prompt = [`역할: ${o.session}`, `작업 제목: ${o.name}`, `호출 모델: ${context.parent.model}`, `작업 모델: ${o.model}`, `부모 대화: ${context.id}`, `목표: ${o.goal}`, `담당 범위: ${o.scope}`, `확정 결정·제약: ${o.decisions || ''}`, `spec: ${o.spec_doc}`, `plan: ${o.plan_doc}`, `관련 문서: ${o.references || ''}`, `작업 위치: ${context.cwd}`, `완료·검증 기준: ${o.validation}`, `중단 조건: 주요 구현 결정·범위 변경 또는 해결 불가 시 부모에게 보고`, o.prompt, '재위임 금지. 사용자 명시 지시 없이 commit/merge/push 금지.', o.session === 'review' ? '읽기 전용 리뷰다. 코드, 문서 또는 파일을 수정·생성·삭제하지 않는다. 실제 변경 원문과 요구사항·검증 근거를 확인한다.' : '', '완료 범위, 변경 파일, 검증 명령·결과, 미해결 문제, 다음 판단을 최종 응답으로 보고한다. 부모가 직접 읽어 수신 확인한다.'].join('\n');
     const turn = await client.request('turn/start', { threadId: id, input: [{ type: 'text', text: prompt, text_elements: [] }] });
