@@ -48,7 +48,7 @@ Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 
 
 Claude와 Codex 리뷰는 전체 승인으로 실행합니다. 리뷰 지시로 코드·문서·파일의 수정·생성·삭제를 금지하며 이 규칙은 셸과 외부 도구에도 적용합니다.
 
-핸드오프·보고·검토는 설치된 `session-workflow` 스킬과 `bin/session.mjs`를 사용합니다. Neovim 작업 공간은 왼쪽부터 AI 목록·대화·문서 본문·문서 목록이며 문서가 없으면 2영역입니다. `Agent`·`AgentNew`는 같은 서버의 대화 버퍼를 사용하고 기존 외부 세션은 `AgentInstances`에서 연결합니다. AI를 바꿔도 숨긴 작업은 계속 실행됩니다. 검토 요청은 현재 대화 포커스를 유지합니다.
+핸드오프·보고·검토는 설치된 `session-workflow` 스킬과 `bin/session.mjs`를 사용합니다. Neovim에서 AI를 호출하면 작업 공간이 열립니다. 작업 공간은 왼쪽부터 AI 목록·대화·문서 본문·문서 목록이며 문서가 없으면 2영역입니다. `Agent`·`AgentNew`로 연 대화는 현재 창의 왼쪽 목록에 쌓입니다. 다른 창의 세션은 `:AgentInstances`에서 연결합니다. AI를 바꿔도 숨긴 작업은 계속 실행됩니다. 검토 요청은 현재 대화 포커스를 유지합니다.
 
 사용자는 `docs/user-review/<주제>.md` 본문에서 a로 승인·진행, r로 수정 요청합니다. Ctrl+D는 본문 숨김이고 `AgentDocument`·`AgentDocuments`로 다시 표시합니다. 좁은 화면에서는 목록을 숨기며 `AgentList`로 AI 목록을 열 수 있습니다. 승인 후에도 문서는 남고 개정되면 재검토합니다. 부모의 검증·별도 리뷰 확인을 담은 `session.mjs task-complete <JSON>`만 정확한 소유자·작업의 문서를 목록에서 제거하며 원본은 보존합니다. 앱 원격 preview 본문 출력과 기존 standalone 별도 창도 유지합니다. 일반 진행 갱신이나 완료 때 검토를 새로 요청하지 않습니다.
 

@@ -50,11 +50,7 @@ end
 local function select_ai()
   local r = row('ai')
   if not r then return end
-  if r.instance.instance == hub.id then M.select(r.entry.id, true); return end
-  hub.rpc(r.instance, 'focus', { id = r.entry.id }, function(result)
-    if not result.ok then notify('FAIL: ' .. tostring(result.error)); return end
-    require('config.agent.launcher').attach(r.instance)
-  end)
+  M.select(r.entry.id, true)
 end
 function M.select_review(id)
   local s = M.state
@@ -123,37 +119,15 @@ function M.refresh()
   end
   s.reviews, s.rows = items, {}
   local text, marks = {}, {}
-  local instances = hub.instances()
-  local own = hub.snapshot()
-  local found = false
-  for i, inst in ipairs(instances) do if inst.instance == hub.id then instances[i], found = own, true end end
-  if not found then instances[#instances + 1] = own end
-  for _, instance in ipairs(instances) do
-    if instance.instance ~= hub.id then
-      s.external = s.external or {}
-      local cached = s.external[instance.instance] or { checked = 0 }
-      s.external[instance.instance] = cached
-      if not cached.pending and os.time() - cached.checked >= 5 then
-        cached.pending, cached.checked = true, os.time()
-        hub.rpc(instance, 'snapshot', {}, function(response)
-          cached.pending, cached.connected, cached.data = false, response.ok, response.data
-          if M.state == s then M.refresh() end
-        end)
-      end
-      if cached.data then instance = cached.data end
-      instance.connected = cached.connected
-    end
-    for _, e in ipairs(instance.entries) do
-      local connection = instance.instance == hub.id and '' or (instance.connected == true and ' [외부]' or ' [연결 확인 필요]')
-      if instance.instance ~= hub.id and instance.connected ~= true then e = vim.tbl_extend('force', e, { status = 'unknown', activity_status = nil }) end
-      text[#text + 1] = (s.selected == e.id and instance.instance == hub.id and '> ' or '') .. e.name
-      text[#text + 1] = '  ' .. (e.model or '모델 확인 불가')
-      text[#text + 1] = '  ●' .. (e.status == 'review_pending' and e.activity_status and ' ●' or '') .. connection
-      marks[#marks + 1] = { #text - 1, 2, e.status }
-      if e.status == 'review_pending' and e.activity_status then marks[#marks + 1] = { #text - 1, 6, e.activity_status } end
-      text[#text + 1] = ''
-      s.rows[#s.rows + 1] = { key = instance.instance .. '/' .. e.id, entry = e, instance = instance }
-    end
+  local instance = hub.snapshot()
+  for _, e in ipairs(instance.entries) do
+    text[#text + 1] = (s.selected == e.id and '> ' or '') .. e.name
+    text[#text + 1] = '  ' .. (e.model or '모델 확인 불가')
+    text[#text + 1] = '  ●' .. (e.status == 'review_pending' and e.activity_status and ' ●' or '')
+    marks[#marks + 1] = { #text - 1, 2, e.status }
+    if e.status == 'review_pending' and e.activity_status then marks[#marks + 1] = { #text - 1, 6, e.activity_status } end
+    text[#text + 1] = ''
+    s.rows[#s.rows + 1] = { key = instance.instance .. '/' .. e.id, entry = e, instance = instance }
   end
   lines(s.ai_buf, #text > 0 and text or { 'n: 새 계획 세션', 'I: 기존 외부 세션 관리' })
   api.nvim_buf_clear_namespace(s.ai_buf, status_ns, 0, -1)

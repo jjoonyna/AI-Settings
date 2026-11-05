@@ -18,6 +18,7 @@ local p, q = root .. '/docs/user-review/first.md', root .. '/docs/user-review/se
 vim.fn.writefile({ '# First', 'A long paragraph to verify the document can wrap within a narrow pane.' }, p)
 vim.fn.writefile({ '# Second' }, q)
 local ok, failure = xpcall(function()
+  H.instances = function() error('workspace must not scan external sessions') end
   W.open(false)
   local s = W.state
   assert(vim.api.nvim_get_current_tabpage() ~= original_tab and vim.api.nvim_tabpage_get_win(original_tab), 'dedicated tab')
@@ -25,6 +26,8 @@ local ok, failure = xpcall(function()
   local cmd = { vim.fn.exepath('node'), '-e', 'setInterval(()=>{},1000)' }
   local a = assert(T.spawn({ agent = 'Codex', role = 'plan', model = 'gpt-6.1-sol', cmd = cmd, cwd = root, name = '계획 | A' }))
   local b = assert(T.spawn({ agent = 'Codex', role = 'work', model = 'gpt-6.1-terra', cmd = cmd, cwd = root, name = '작업 | B', env = { AGENT_PARENT_ID = tostring(a) } }))
+  W.refresh()
+  assert(#s.rows == 2, 'both local sessions are listed')
   local entry = T.registry[a]
   local task = T.registry[b].task_id
   local ns = vim.api.nvim_get_namespaces().agent_workspace_status
