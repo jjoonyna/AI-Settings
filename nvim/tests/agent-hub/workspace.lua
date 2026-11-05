@@ -1,5 +1,8 @@
 local config = vim.fn.stdpath('config')
 vim.opt.rtp:prepend(config)
+local runtime = require('config.agent.policy').installation().runtime
+local session_cli = runtime .. '/bin/session.mjs'
+if vim.fn.filereadable(session_cli) ~= 1 then session_cli = config .. '/../scripts/runtime/session.mjs' end
 vim.o.hidden, vim.o.columns, vim.o.lines = true, 190, 48
 vim.env.AGENT_HUB_HOME = vim.fn.tempname() .. '-workspace'
 vim.env.AGENT_HUB_INSTANCE, vim.env.AGENT_HUB_REQUEST, vim.env.AGENT_HUB_MANAGED = nil, nil, nil
@@ -53,7 +56,7 @@ local ok, failure = xpcall(function()
   local function cli(action, argument, owner)
     local e = T.registry[owner]
     local result
-    vim.system({ vim.fn.exepath('node'), config .. '/../scripts/runtime/session.mjs', action, argument }, {
+    vim.system({ vim.fn.exepath('node'), session_cli, action, argument }, {
       text = true, env = { NVIM = vim.v.servername, AGENT_SESSION_ID = tostring(owner), AGENT_TASK_ID = e.task_id,
         AGENT_EVENT_INSTANCE = H.id, AGENT_EVENT_TOKEN = e.event_token },
     }, function(value) result = value end)

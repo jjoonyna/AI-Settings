@@ -1,6 +1,9 @@
 -- Exact saved resume identity must also authorize task completion without a handoff.
 local config = vim.fn.stdpath('config')
 vim.opt.rtp:prepend(config)
+local runtime = require('config.agent.policy').installation().runtime
+local session_cli = runtime .. '/bin/session.mjs'
+if vim.fn.filereadable(session_cli) ~= 1 then session_cli = config .. '/../scripts/runtime/session.mjs' end
 local root = vim.fn.tempname() .. '-resume-complete'
 vim.env.AGENT_HUB_HOME = root .. '/hub'
 vim.env.AGENT_HUB_INSTANCE, vim.env.AGENT_HUB_REQUEST, vim.env.AGENT_HUB_MANAGED = nil, nil, nil
@@ -31,7 +34,7 @@ local function cli(role, override_id)
   local forged = vim.tbl_extend('force', request, { resolved_session = { role = 'plan', model = 'gpt-6.1-sol' } })
   assert(H.write(confirmation, forged))
   local result
-  vim.system({ vim.fn.exepath('node'), config .. '/../scripts/runtime/session.mjs', 'task-complete', confirmation }, {
+  vim.system({ vim.fn.exepath('node'), session_cli, 'task-complete', confirmation }, {
     text = true, env = { NVIM = vim.v.servername, AGENT_SESSION_ID = tostring(id), AGENT_SESSION_VENDOR = 'codex',
       AGENT_SESSION_ROLE = 'plan', CODEX_HOME = home, CODEX_THREAD_ID = override_id or session, CODEX_SESSION_ID = override_id or session },
   }, function(value) result = value end)

@@ -66,12 +66,15 @@ local ok, failure = xpcall(function()
   assert(vim.wait(8000, function() return not vim.uv.kill(child_pid, 0) end, 50), '원격 자식 프로세스 종료')
   assert(vim.fn.jobwait({ entry.chan }, 0)[1] == -1, '다른 세션은 유지')
   remote = nil
-  local markdown = dofile(config .. '/lua/plugins/markdown.lua')
+  local markdown = {}
+  for _, plugin in ipairs(dofile(config .. '/lua/plugins/markdown.lua')) do
+    markdown[plugin[1]] = plugin
+  end
   local lint_opts = { linters_by_ft = { markdown = { 'markdownlint-cli2' }, lua = { 'selene' } } }
-  markdown[1].opts(nil, lint_opts)
+  markdown['mfussenegger/nvim-lint'].opts(nil, lint_opts)
   assert(#lint_opts.linters_by_ft.markdown == 0 and lint_opts.linters_by_ft.lua[1] == 'selene')
   local format_opts = { formatters_by_ft = { markdown = { 'prettier', 'markdownlint-cli2', 'markdown-toc' } } }
-  markdown[2].opts(nil, format_opts)
+  markdown['stevearc/conform.nvim'].opts(nil, format_opts)
   assert(table.concat(format_opts.formatters_by_ft.markdown, ',') == 'prettier,markdown-toc')
   print('통과: 등록·이름 변경·다중 인스턴스·공유 기록·패널·연결 오류·서버와 자식 종료·Markdown 설정')
   print('검증 기록: ' .. root)
