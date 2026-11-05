@@ -8,6 +8,8 @@ Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Wi
 
 [GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 설치할 버전의 **Source code (zip)**을 내려받습니다. 압축을 푼 폴더에서 `install.cmd`를 실행합니다.
 
+기존 버전에서 업데이트할 때도 새 릴리즈 ZIP을 풀고 `install.cmd`를 다시 실행한 뒤 Neovim을 다시 엽니다.
+
 Git으로 저장소를 받아 설치할 수도 있습니다.
 
 ```powershell

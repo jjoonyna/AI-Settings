@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-- Neovim은 AI를 호출할 때 작업 공간을 열며, 왼쪽 목록에는 현재 창에서 연 세션만 표시. 외부 세션은 `:AgentInstances`에서 조회.
+## 0.0.1
+
+- Neovim 시작 시 AI 작업 공간을 자동으로 열거나 다른 창의 AI 세션을 조회하던 동작을 제거.
+- `Space → a → a`로 호출한 현재 창의 세션을 왼쪽 목록에서 클릭 또는 Enter로 전환. 과거 세션은 `:AgentResume`, 다른 창은 `:AgentInstances`에서 조회.
+- README와 설치용 한국어 PDF에 업데이트 및 세션 전환 절차 반영.
 
 ## 0.0.0
 
