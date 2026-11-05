@@ -74,7 +74,7 @@ function M.snapshot()
   local entries = {}
   for _, e in ipairs(require('config.agent.terminal').entries()) do
     entries[#entries + 1] = { id = e.id, name = e.name, agent = e.agent or '에이전트', cwd = e.cwd,
-      branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf, role = e.role, model = e.model,
+      branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf, role = e.role, model = e.model, parent_id = e.parent_id,
       status = e.status or 'unknown', activity_status = e.activity_status, status_source = e.status_source, exit_code = e.exit_code }
   end
   return { version = 1, instance = M.id, pid = vim.fn.getpid(), server = vim.v.servername,

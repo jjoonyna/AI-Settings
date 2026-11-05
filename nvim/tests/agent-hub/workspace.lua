@@ -14,7 +14,7 @@ local original_tab = vim.api.nvim_get_current_tabpage()
 local original_buf = vim.api.nvim_get_current_buf()
 local root = vim.fn.tempname()
 vim.fn.mkdir(root .. '/docs/user-review', 'p')
-local p, q = root .. '/docs/user-review/first.md', root .. '/docs/user-review/second.md'
+local p, q = root .. '/docs/user-review/first.md', root .. '/docs/user-review/second-document-with-a-long-title-for-wrapping.md'
 vim.fn.writefile({ '# First', 'A long paragraph to verify the document can wrap within a narrow pane.' }, p)
 vim.fn.writefile({ '# Second' }, q)
 local ok, failure = xpcall(function()
@@ -26,24 +26,35 @@ local ok, failure = xpcall(function()
   local cmd = { vim.fn.exepath('node'), '-e', 'setInterval(()=>{},1000)' }
   local a = assert(T.spawn({ agent = 'Codex', role = 'plan', model = 'gpt-6.1-sol', cmd = cmd, cwd = root, name = '계획 | A' }))
   local b = assert(T.spawn({ agent = 'Codex', role = 'work', model = 'gpt-6.1-terra', cmd = cmd, cwd = root, name = '작업 | B', env = { AGENT_PARENT_ID = tostring(a) } }))
+  local c = assert(T.spawn({ agent = 'Codex', role = 'plan', cwd = root, name = '계획 | C', cmd = cmd }))
+  local d = assert(T.spawn({ agent = 'Codex', role = 'review', cwd = root, name = '리뷰 | D', cmd = cmd, env = { AGENT_PARENT_ID = tostring(a) } }))
+  local e = assert(T.spawn({ agent = 'Codex', role = 'work', cwd = root, name = '작업 | E', cmd = cmd, env = { AGENT_PARENT_ID = tostring(c) } }))
+  local orphan = assert(T.spawn({ agent = 'Codex', role = 'work', cwd = root, name = '고아', cmd = cmd, env = { AGENT_PARENT_ID = '999999' } }))
   W.refresh()
-  assert(#s.rows == 2, 'both local sessions are listed')
+  assert(#s.rows == 6, 'all sessions listed')
+  for i, id in ipairs({ a, b, d, c, e, orphan }) do assert(s.rows[i].entry.id == id, 'group order') end
+  local rendered = vim.api.nvim_buf_get_lines(s.ai_buf, 0, -1, false)
+  assert(rendered[1]:find('● 계획 | A', 1, true) and rendered[5]:find('    ● 작업 | B', 1, true), 'dot before indented child name')
+  assert(W.select(orphan, false), 'orphan remains selectable')
   local entry = T.registry[a]
   local task = T.registry[b].task_id
   local ns = vim.api.nvim_get_namespaces().agent_workspace_status
-  for status, group in pairs({ working = 'Working', idle = 'Waiting', response_requested = 'Waiting', review_pending = 'Waiting',
+  for status, group in pairs({ working = 'Working', idle = 'Waiting', response_requested = 'Waiting', review_pending = 'Working',
     interrupted = 'Stopped', error = 'Stopped', complete = 'Complete', unknown = 'Unknown', invalid = 'Unknown' }) do
     entry.status, entry.activity_status = status, status == 'review_pending' and 'working' or nil
     W.refresh()
     local index
     for i, item in ipairs(s.rows) do if item.entry.id == a and item.instance.instance == H.id then index = i end end
-    local line = (index - 1) * 4 + 2
+    local line = (index - 1) * 4
     local marks = vim.api.nvim_buf_get_extmarks(s.ai_buf, ns, { line, 0 }, { line, -1 }, { details = true })
-    assert(#marks == (status == 'review_pending' and 2 or 1), 'status highlights replaced on refresh')
+    assert(#marks == 1 and marks[1][3] == 2, 'one dot before name')
     assert(marks[1][4].hl_group == 'AgentStatus' .. group, 'status color: ' .. status)
-    if status == 'review_pending' then assert(marks[2][4].hl_group == 'AgentStatusWorking', 'review activity color') end
   end
-  entry.status, entry.activity_status = 'review_pending', 'working'
+  entry.status, entry.activity_status = 'review_pending', nil
+  W.refresh()
+  local unknown = vim.api.nvim_buf_get_extmarks(s.ai_buf, ns, { 0, 0 }, { 0, -1 }, { details = true })
+  assert(#unknown == 1 and unknown[1][4].hl_group == 'AgentStatusUnknown', 'missing activity is unknown')
+  entry.activity_status = 'working'
   W.refresh()
   vim.api.nvim_set_current_win(s.ai)
   for i, item in ipairs(s.rows) do if item.entry.id == a then vim.api.nvim_win_set_cursor(s.ai, { (i - 1) * 4 + 1, 0 }) end end
@@ -51,7 +62,12 @@ local ok, failure = xpcall(function()
   vim.notify = function(value) message = value end
   vim.fn.maparg('?', 'n', false, true).callback()
   vim.notify = notify
-  assert(message:find('검토 대기', 1, true) and message:find('작업 중', 1, true), 'help identifies status and activity')
+  assert(message:find('상태: 작업 중', 1, true) and not message:find('검토 대기', 1, true), 'help matches activity dot')
+  entry.activity_status = nil; W.refresh()
+  vim.notify = function(value) message = value end
+  vim.fn.maparg('?', 'n', false, true).callback()
+  vim.notify = notify
+  assert(message:find('상태: 확인 불가', 1, true), 'help matches unknown activity dot')
   vim.api.nvim_set_hl(0, 'AgentStatusWorking', {})
   vim.api.nvim_exec_autocmds('ColorScheme', {})
   assert(vim.api.nvim_get_hl(0, { name = 'AgentStatusWorking' }).fg, 'colors restored after ColorScheme')
@@ -81,8 +97,16 @@ local ok, failure = xpcall(function()
   assert(vim.bo[s.body_buf].readonly and not vim.bo[s.body_buf].modifiable and vim.wo[s.body].wrap)
   assert(preview.show(p):match('^FAIL'), 'ambiguous legacy owner fails')
   assert(preview.show({ path = q, owner = a, task_id = entry.task_id }):match('^OK'))
+  W.refresh()
+  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 0, 1, false)[1]:find('[검토 대기] first', 1, true), 'document status precedes title')
   local items = R.items()
   local first, second = items[1], items[2]
+  assert(vim.wo[s.docs].wrap and vim.wo[s.docs].linebreak and not vim.wo[s.ai].wrap, 'only document list wraps')
+  assert(vim.api.nvim_win_text_height(s.docs, { start_row = 3, end_row = 3 }).all > 1, 'long document title wraps')
+  vim.api.nvim_set_current_win(s.docs)
+  vim.api.nvim_win_set_cursor(s.docs, { 4, 0 })
+  vim.fn.maparg('<CR>', 'n', false, true).callback()
+  assert(s.document == second.id, 'Enter selects wrapped document')
   assert(W.select_review(first.id))
   vim.api.nvim_set_current_win(s.body)
   vim.api.nvim_win_set_cursor(s.docs, { 4, 0 })

@@ -5,6 +5,9 @@ local hub = require('config.agent.hub')
 local status_ns = api.nvim_create_namespace('agent_workspace_status')
 local status_groups = { working = 'Working', idle = 'Waiting', response_requested = 'Waiting', review_pending = 'Waiting',
   interrupted = 'Stopped', error = 'Stopped', complete = 'Complete', unknown = 'Unknown' }
+local function activity_status(e)
+  return e.status == 'review_pending' and (e.activity_status or 'unknown') or e.status
+end
 local function status_highlights()
   local light = vim.o.background == 'light'
   for name, colors in pairs({ Working = { light and '#006b32' or '#67d391', 2 }, Waiting = { light and '#805800' or '#e8c65a', 3 },
@@ -97,6 +100,7 @@ function M.layout()
   ensure('docs', has and cols >= 60 and (cols >= 145 or s.show_docs), valid(s.body) and s.body or s.chat, 'right', s.docs_buf, ' 문서 목록', 26)
   ensure('body', has and not s.hide_body and cols >= 45 and (cols >= 85 or s.show_body), s.chat, 'right', s.body_buf, ' 사용자 검토')
   ensure('ai', not s.hide_ai and cols >= 45 and (cols >= 85 or s.show_ai), s.chat, 'left', s.ai_buf, ' AI 목록', 28)
+  if valid(s.docs) then vim.wo[s.docs].wrap, vim.wo[s.docs].linebreak = true, true end
   if valid(s.body) then vim.wo[s.body].wrap, vim.wo[s.body].linebreak = true, true end
   if valid(s.body) then
     local remaining = cols - (valid(s.ai) and api.nvim_win_get_width(s.ai) + 1 or 0)
@@ -120,12 +124,27 @@ function M.refresh()
   s.reviews, s.rows = items, {}
   local text, marks = {}, {}
   local instance = hub.snapshot()
+  local plans, children, ordered = {}, {}, {}
+  for _, e in ipairs(instance.entries) do if e.role == 'plan' then plans[e.id] = true end end
   for _, e in ipairs(instance.entries) do
-    text[#text + 1] = (s.selected == e.id and '> ' or '') .. e.name
-    text[#text + 1] = '  ' .. (e.model or '모델 확인 불가')
-    text[#text + 1] = '  ●' .. (e.status == 'review_pending' and e.activity_status and ' ●' or '')
-    marks[#marks + 1] = { #text - 1, 2, e.status }
-    if e.status == 'review_pending' and e.activity_status then marks[#marks + 1] = { #text - 1, 6, e.activity_status } end
+    if (e.role == 'work' or e.role == 'review') and plans[e.parent_id] then
+      children[e.parent_id] = children[e.parent_id] or {}
+      table.insert(children[e.parent_id], e)
+    end
+  end
+  for _, e in ipairs(instance.entries) do
+    if not ((e.role == 'work' or e.role == 'review') and plans[e.parent_id]) then
+      table.insert(ordered, { entry = e, indent = '' })
+      for _, child in ipairs(children[e.id] or {}) do table.insert(ordered, { entry = child, indent = '  ' }) end
+    end
+  end
+  for _, item in ipairs(ordered) do
+    local e = item.entry
+    local prefix = (s.selected == e.id and '> ' or '  ') .. item.indent
+    text[#text + 1] = prefix .. '● ' .. e.name
+    marks[#marks + 1] = { #text - 1, #prefix, activity_status(e) }
+    text[#text + 1] = '  ' .. item.indent .. (e.model or '모델 확인 불가')
+    text[#text + 1] = ''
     text[#text + 1] = ''
     s.rows[#s.rows + 1] = { key = instance.instance .. '/' .. e.id, entry = e, instance = instance }
   end
@@ -138,8 +157,8 @@ function M.refresh()
   local titles = {}
   local review_labels = { review_pending = '검토 대기', approved = '승인·진행', changes_requested = '수정 요청' }
   for _, item in ipairs(items) do
-    titles[#titles + 1] = (s.document == item.id and '> ' or '') .. vim.fn.fnamemodify(item.path, ':t:r')
-    titles[#titles + 1] = '  ' .. (review_labels[item.status] or '확인 불가')
+    titles[#titles + 1] = (s.document == item.id and '> ' or '') .. '[' .. (review_labels[item.status] or '확인 불가') .. '] ' .. vim.fn.fnamemodify(item.path, ':t:r')
+    titles[#titles + 1] = ''
     titles[#titles + 1] = '  AI #' .. item.owner .. ' / ' .. item.task_id:sub(1, 10)
   end
   lines(s.docs_buf, #titles > 0 and titles or { '검토 문서 없음' })
@@ -209,8 +228,7 @@ function M.open(focus_list)
         local r = b == s.ai_buf and row('ai') or nil
         if r then
           local labels, e = require('config.agent.activity').labels, r.entry
-          message = message .. '\n상태: ' .. (labels[e.status] or labels.unknown)
-          if e.status == 'review_pending' and e.activity_status then message = message .. ' · 활동: ' .. (labels[e.activity_status] or labels.unknown) end
+          message = message .. '\n상태: ' .. (labels[activity_status(e)] or labels.unknown)
         end
         vim.notify(message)
       end, '작업 공간 도움말')
