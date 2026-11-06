@@ -66,6 +66,7 @@ Space a l 또는 :AgentList로 AI 작업 공간을 연다. 왼쪽부터 AI 목�
 `docs/user-review/*.md`의 명시적 preview 요청만 등록한다. 파일 생성·열기·저장·창 닫기는 승인이나 완료가 아니다. CLI `session.mjs preview <문서>`는 현재 owner·task_id를 전달하며 `{path, owner, task_id}` JSON 파일도 받는다. 기존 Lua path 호출은 소유자가 하나일 때 호환된다. 소유자·작업이 모호하거나 불일치하면 거부한다.
 
 - 통합 화면의 본문은 읽기 전용이며 a는 승인·진행, r은 수정 요청을 해당 AI에 전달한다. 승인 후에도 목록을 유지하고 개정되면 재검토한다.
+- 창보다 넓은 표는 표시만 셀 줄바꿈 격자로 바꾼다(원본 파일 불변). 격자 셀 안 백틱·`**`·`__`는 제거하며 열 최소 폭을 확보할 수 없으면 원문을 유지한다.
 - Ctrl+D는 본문 숨김이며 `AgentDocument`로 복원한다. 숨겨도 문서와 작업은 남는다.
 - 부모가 검증·별도 리뷰를 확인한 뒤 `AgentTaskComplete({owner=자식번호, task_id='정확한 ID', parent_id=부모번호, verified=true, reviewed=true})` 또는 같은 JSON의 `session.mjs task-complete`를 호출한다. 미승인·개정·수정 요청 문서는 거부한다. 해당 소유자/작업 문서만 목록에서 제거하고 원본은 보존한다.
 - 기존 standalone은 별도 읽기 전용 검토 창과 Ctrl+D 닫기를 유지한다. 앱 원격 preview는 본문을 stdout에 표시한다.
@@ -107,6 +108,7 @@ AgentHubNew는 시작 요청 식별자를 반환한다. 실제 시작 실패는 
 ```powershell
 nvim --headless -u NONE -i NONE -l "$env:LOCALAPPDATA/nvim/tests/agent-hub/integration.lua"
 nvim --headless -u NONE -i NONE -l "$env:LOCALAPPDATA/nvim/tests/agent-hub/workspace.lua"
+nvim --headless -u NONE -i NONE -l "$env:LOCALAPPDATA/nvim/tests/agent-hub/markdown-table.lua"
 & <설치된 Python 경로> "$env:LOCALAPPDATA/nvim/tests/agent-hub/ui-workspace.py"
 nvim --headless -u NONE -i NONE -l "$env:LOCALAPPDATA/nvim/tests/agent-hub/ui-integration.lua"
 ```

@@ -106,6 +106,17 @@ local ok, failure = xpcall(function()
   assert(vim.bo[s.body_buf].readonly and not vim.bo[s.body_buf].modifiable and vim.wo[s.body].wrap)
   assert(preview.show(p):match('^FAIL'), 'ambiguous legacy owner fails')
   assert(preview.show({ path = q, owner = a, task_id = entry.task_id }):match('^OK'))
+  do -- wide tables become grids in the body; narrow tables and the file stay as written
+    local saved, previous = s.document, vim.fn.readfile(p)
+    for _, item in ipairs(R.items()) do if item.path == p then s.document = item.id end end
+    local narrow = '| a | b |'
+    vim.fn.writefile({ narrow, '|---|---|', '| 1 | 2 |', '', '| head | body |', '|---|---|', '| x | ' .. ('긴 설명 '):rep(40) .. ' |' }, p)
+    W.refresh()
+    local shown = table.concat(vim.api.nvim_buf_get_lines(s.body_buf, 0, -1, false), ' ')
+    assert(shown:find('┌', 1, true) and shown:find(narrow, 1, true), 'wide table grid, narrow table raw')
+    assert(vim.fn.readfile(p)[5] == '| head | body |', 'source file unchanged')
+    vim.fn.writefile(previous, p); s.document = saved; W.refresh()
+  end
   W.refresh()
   assert(vim.api.nvim_buf_get_lines(s.docs_buf, 0, 1, false)[1]:find('[검토 대기] first', 1, true), 'document status precedes title')
   local items = R.items()

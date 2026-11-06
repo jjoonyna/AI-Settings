@@ -3,6 +3,7 @@ local M = { state = nil }
 local api = vim.api
 local hub = require('config.agent.hub')
 local status_ns = api.nvim_create_namespace('agent_workspace_status')
+local table_ns = api.nvim_create_namespace('agent_workspace_table')
 local status_groups = { working = 'Working', idle = 'Waiting', response_requested = 'Waiting', review_pending = 'Waiting',
   interrupted = 'Stopped', error = 'Stopped', complete = 'Complete', unknown = 'Unknown' }
 local function activity_status(e)
@@ -243,13 +244,28 @@ function M.refresh()
     titles[#titles + 1] = ''
   end
   lines(s.docs_buf, #titles > 0 and titles or { '검토 문서 없음' })
-  local body_changed
+  local body
   for _, item in ipairs(items) do
     if item.id == s.document then
-      body_changed = lines(s.body_buf, vim.fn.filereadable(item.path) == 1 and vim.fn.readfile(item.path) or { '문서 파일을 읽을 수 없습니다: ' .. item.path })
+      body = vim.fn.filereadable(item.path) == 1 and vim.fn.readfile(item.path) or { '문서 파일을 읽을 수 없습니다: ' .. item.path }
     end
   end
   M.layout()
+  local body_changed
+  if body then
+    local marks = {}
+    if valid(s.body) then
+      local info = vim.fn.getwininfo(s.body)[1]
+      body, marks = require('config.agent.markdown_table').fit(body, info.width - info.textoff)
+    end
+    body_changed = lines(s.body_buf, body)
+    if body_changed then
+      api.nvim_buf_clear_namespace(s.body_buf, table_ns, 0, -1)
+      for _, m in ipairs(marks) do
+        api.nvim_buf_set_extmark(s.body_buf, table_ns, m[1], m[2], { end_col = m[3], hl_group = m[4] })
+      end
+    end
+  end
   local document_changed = s.rendered_document ~= s.document
   s.rendered_document = s.document
   for kind, key in pairs({ ai = ai_key or '', docs = doc_key or '' }) do
