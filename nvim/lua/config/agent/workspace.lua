@@ -4,6 +4,7 @@ local api = vim.api
 local hub = require('config.agent.hub')
 local status_ns = api.nvim_create_namespace('agent_workspace_status')
 local table_ns = api.nvim_create_namespace('agent_workspace_table')
+local separator_ns = api.nvim_create_namespace('agent_workspace_separator')
 local status_groups = { working = 'Working', idle = 'Waiting', response_requested = 'Waiting', review_pending = 'Waiting',
   interrupted = 'Stopped', error = 'Stopped', complete = 'Complete', unknown = 'Unknown' }
 local function activity_status(e)
@@ -55,7 +56,8 @@ local function row(kind)
     for _, item in ipairs(s.rows) do if line >= item.first and line <= item.last then return item end end
     return
   end
-  return s.reviews[math.floor((line - 1) / 4) + 1]
+  if (line - 1) % 3 == 2 then return end
+  return s.reviews[math.floor((line - 1) / 3) + 1]
 end
 local function notify(result)
   vim.notify(result, result:match('^FAIL') and vim.log.levels.WARN or vim.log.levels.INFO)
@@ -123,7 +125,8 @@ end
 function M.decision(decision)
   local s = M.state
   local r = s and api.nvim_get_current_win() == s.docs and row('docs') or nil
-  local id = r and r.id or (s and s.document)
+  local id = s and api.nvim_get_current_win() == s.docs and (r and r.id) or nil
+  if s and api.nvim_get_current_win() ~= s.docs then id = s.document end
   if not id then return end
   if decision == 'approved' then notify(require('config.agent.reviews').decide(id, decision))
   else
@@ -219,9 +222,13 @@ function M.refresh()
   local selection_ns = api.nvim_create_namespace('agent_workspace_selection')
   api.nvim_buf_clear_namespace(s.ai_buf, selection_ns, 0, -1)
   local selected_lines = {}
+  local function separator(win)
+    local info = valid(win) and vim.fn.getwininfo(win)[1]
+    return string.rep('─', info and math.max(0, info.width - info.textoff) or 0)
+  end
   for _, item in ipairs(ordered) do
     local e = item.entry
-    if item.indent == '' and #text > 0 then text[#text + 1] = '' end
+    if #text > 0 then text[#text + 1] = separator(s.ai) end
     local has_children = children[e.id] and #children[e.id] > 0
     local arrow = has_children and (s.expanded == e.id and '▼ ' or '▶ ') or '  '
     local prefix = item.indent == '' and arrow or '    '
@@ -238,6 +245,8 @@ function M.refresh()
       first = first, last = #text, arrow = has_children, displayed_status = displayed }
   end
   lines(s.ai_buf, #text > 0 and text or { 'n: 새 계획 세션', 'I: 기존 외부 세션 관리' })
+  api.nvim_buf_clear_namespace(s.ai_buf, separator_ns, 0, -1)
+  for i = 3, #text, 3 do api.nvim_buf_add_highlight(s.ai_buf, separator_ns, 'WinSeparator', i - 1, 0, -1) end
   for _, first in ipairs(selected_lines) do
     for line = first - 1, first do
       api.nvim_buf_set_extmark(s.ai_buf, selection_ns, line, 0, { end_row = line + 1, end_col = 0, hl_group = 'Visual', hl_eol = true, priority = 90 })
@@ -250,15 +259,16 @@ function M.refresh()
   if not vim.tbl_contains(vim.tbl_map(function(i) return i.id end, items), s.document) then s.document = items[1] and items[1].id end
   local titles = {}
   for _, item in ipairs(items) do
+    if #titles > 0 then titles[#titles + 1] = separator(s.docs) end
     titles[#titles + 1] = title((s.document == item.id and '> ' or '') .. title(vim.fn.fnamemodify(item.path, ':t:r')), s.docs)
-    titles[#titles + 1] = ''
     local owner = entries[item.owner]
     local plan = owner and owner.task_id == item.task_id and (owner.role == 'plan' and owner
       or ((owner.role == 'work' or owner.role == 'review') and owner.parent_id == item.parent_id and plans[item.parent_id]))
     titles[#titles + 1] = title('  ' .. title(plan and not plan.selecting and plan.name and vim.trim(plan.name) ~= '' and plan.name or '계획 제목 확인 불가'), s.docs)
-    titles[#titles + 1] = ''
   end
   lines(s.docs_buf, #titles > 0 and titles or { '검토 문서 없음' })
+  api.nvim_buf_clear_namespace(s.docs_buf, separator_ns, 0, -1)
+  for i = 3, #titles, 3 do api.nvim_buf_add_highlight(s.docs_buf, separator_ns, 'WinSeparator', i - 1, 0, -1) end
   local body
   for _, item in ipairs(items) do
     if item.id == s.document then
@@ -285,7 +295,7 @@ function M.refresh()
   s.rendered_document = s.document
   for kind, key in pairs({ ai = ai_key or '', docs = doc_key or '' }) do
     for i, value in ipairs(kind == 'ai' and s.rows or items) do
-      if (value.key or value.id) == key and valid(s[kind]) then api.nvim_win_set_cursor(s[kind], { kind == 'ai' and value.first or (i - 1) * 4 + 1, 0 }); break end
+      if (value.key or value.id) == key and valid(s[kind]) then api.nvim_win_set_cursor(s[kind], { kind == 'ai' and value.first or (i - 1) * 3 + 1, 0 }); break end
     end
   end
   if valid(current) and api.nvim_get_current_win() == current and current ~= s.ai and current ~= s.docs
@@ -363,10 +373,11 @@ function M.open(focus_list)
       for key, delta in pairs({ j = 1, k = -1, ['<Down>'] = 1, ['<Up>'] = -1 }) do
         map(b, key, function()
           if not valid(s[kind]) then return end
-          local stride = 4
+          local stride = 3
           local count = #(kind == 'ai' and s.rows or s.reviews)
           if count == 0 then return end
           local index = math.floor((api.nvim_win_get_cursor(s[kind])[1] - 1) / stride) + 1
+          if kind == 'docs' and not row('docs') and delta < 0 then index = index + 1 end
           if kind == 'ai' then
             local current = row('ai')
             index = current and (vim.fn.index(s.rows, current) + 1) or 0
