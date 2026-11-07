@@ -18,6 +18,19 @@ local function status_highlights()
   end
 end
 local function valid(w) return w and api.nvim_win_is_valid(w) end
+local function title(text, win)
+  text = text:gsub('^(계획)%s*|%s*', '%1|'):gsub('^(작업)%s*|%s*', '%1|'):gsub('^(리뷰)%s*|%s*', '%1|')
+  if not valid(win) then return text end
+  local info = vim.fn.getwininfo(win)[1]
+  local width = info.width - info.textoff
+  if vim.fn.strdisplaywidth(text) <= width then return text end
+  local result = ''
+  for char in text:gmatch('[%z\1-\127\194-\244][\128-\191]*') do
+    if vim.fn.strdisplaywidth(result .. char) > math.max(0, width - 3) then break end
+    result = result .. char
+  end
+  return result .. string.rep('.', math.min(3, width))
+end
 local function buffer(ft)
   local b = api.nvim_create_buf(false, true)
   vim.bo[b].bufhidden, vim.bo[b].filetype, vim.bo[b].modifiable = 'hide', ft, false
@@ -130,9 +143,11 @@ local function ensure(name, show, anchor, side, buf, title, width)
     vim.wo[s[name]].number, vim.wo[s[name]].relativenumber = false, false
     vim.wo[s[name]].signcolumn, vim.wo[s[name]].winbar = 'no', title
     vim.wo[s[name]].wrap, vim.wo[s[name]].cursorline = false, true
-    if width then vim.wo[s[name]].winfixwidth = true end
+    if width then
+      vim.wo[s[name]].winfixwidth = true
+      api.nvim_win_set_width(s[name], width)
+    end
   end
-  if show and width and valid(s[name]) then api.nvim_win_set_width(s[name], width) end
 end
 function M.layout()
   local s = M.state
@@ -141,7 +156,7 @@ function M.layout()
   ensure('docs', has and cols >= 60 and (cols >= 145 or s.show_docs), valid(s.body) and s.body or s.chat, 'right', s.docs_buf, ' 문서 목록', 26)
   ensure('body', has and not s.hide_body and cols >= 45 and (cols >= 85 or s.show_body), s.chat, 'right', s.body_buf, ' 사용자 검토')
   ensure('ai', not s.hide_ai and cols >= 45 and (cols >= 85 or s.show_ai), s.chat, 'left', s.ai_buf, ' AI 목록', 28)
-  if valid(s.docs) then vim.wo[s.docs].wrap, vim.wo[s.docs].linebreak = true, true end
+  if valid(s.docs) then vim.wo[s.docs].wrap, vim.wo[s.docs].linebreak = false, false end
   if valid(s.body) then vim.wo[s.body].wrap, vim.wo[s.body].linebreak = true, true end
   if valid(s.body) then
     local remaining = cols - (valid(s.ai) and api.nvim_win_get_width(s.ai) + 1 or 0)
@@ -163,6 +178,7 @@ function M.refresh()
     return
   end
   s.reviews, s.rows = items, {}
+  M.layout()
   local text, marks = {}, {}
   local instance = hub.snapshot()
   local plans, children, ordered, entries = {}, {}, {}, {}
@@ -210,7 +226,7 @@ function M.refresh()
     local arrow = has_children and (s.expanded == e.id and '▼ ' or '▶ ') or '  '
     local prefix = item.indent == '' and arrow or '    '
     local first = #text + 1
-    text[#text + 1] = prefix .. '● ' .. e.name
+    text[#text + 1] = title(prefix .. '● ' .. title(e.name), s.ai)
     local displayed = has_children and s.expanded ~= e.id and aggregate(e) or activity_status(e)
     marks[#marks + 1] = { #text - 1, #prefix, displayed }
     text[#text + 1] = e.selecting and '' or ('  ' .. item.indent .. (e.model or '모델 확인 불가'))
@@ -233,14 +249,13 @@ function M.refresh()
   end
   if not vim.tbl_contains(vim.tbl_map(function(i) return i.id end, items), s.document) then s.document = items[1] and items[1].id end
   local titles = {}
-  local review_labels = { review_pending = '검토 대기', approved = '승인·진행', changes_requested = '수정 요청' }
   for _, item in ipairs(items) do
-    titles[#titles + 1] = (s.document == item.id and '> ' or '') .. '[' .. (review_labels[item.status] or '확인 불가') .. '] ' .. vim.fn.fnamemodify(item.path, ':t:r')
+    titles[#titles + 1] = title((s.document == item.id and '> ' or '') .. title(vim.fn.fnamemodify(item.path, ':t:r')), s.docs)
     titles[#titles + 1] = ''
     local owner = entries[item.owner]
     local plan = owner and owner.task_id == item.task_id and (owner.role == 'plan' and owner
       or ((owner.role == 'work' or owner.role == 'review') and owner.parent_id == item.parent_id and plans[item.parent_id]))
-    titles[#titles + 1] = '  ' .. (plan and not plan.selecting and plan.name and vim.trim(plan.name) ~= '' and plan.name or '계획 제목 확인 불가')
+    titles[#titles + 1] = title('  ' .. title(plan and not plan.selecting and plan.name and vim.trim(plan.name) ~= '' and plan.name or '계획 제목 확인 불가'), s.docs)
     titles[#titles + 1] = ''
   end
   lines(s.docs_buf, #titles > 0 and titles or { '검토 문서 없음' })
@@ -392,7 +407,7 @@ function M.open(focus_list)
     end, api.nvim_create_namespace('agent_workspace_mouse'))
     status_highlights()
     api.nvim_create_autocmd('ColorScheme', { group = group, callback = status_highlights })
-    api.nvim_create_autocmd({ 'VimResized', 'TabEnter' }, { group = group, callback = function() vim.schedule(M.refresh) end })
+    api.nvim_create_autocmd({ 'VimResized', 'WinResized', 'TabEnter' }, { group = group, callback = function() vim.schedule(M.refresh) end })
     s.timer = vim.uv.new_timer()
     s.timer:start(1000, 1000, vim.schedule_wrap(function()
       if not api.nvim_tabpage_is_valid(s.tab) then s.timer:stop(); s.timer:close(); if M.state == s then M.state = nil end; return end

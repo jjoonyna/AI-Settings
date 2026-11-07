@@ -72,7 +72,7 @@ a = assert(T.spawn({cmd=cmd, agent='Codex', role='plan', model='gpt-6.1-sol', na
 b = assert(T.spawn({cmd=cmd, agent='Codex', role='work', model='gpt-6.1-terra', name='작업 | B', cwd=vim.fn.getcwd(), env={AGENT_PARENT_ID=tostring(a)}}))
 local root = vim.env.AGENT_HUB_HOME .. '/docs/user-review'
 vim.fn.mkdir(root, 'p')
-p, q = root .. '/first.md', root .. '/second.md'
+p, q = root .. '/first.md', root .. '/긴한글제목 English document title for resize testing.md'
 vim.fn.writefile({'# First'},p); vim.fn.writefile({'# Second'},q)
 W.select(a,true)
 """)
@@ -131,10 +131,41 @@ W.select(a,true)
         lua("W.refresh(); W.show('docs')")
         click('docs', 5)
         wait("return W.state.document == R.items()[2].id")
-        assert lua("T.registry[a].name = '계획 | a very long plan title for narrow wrapping'; W.refresh(); return vim.api.nvim_win_text_height(W.state.docs, {start_row=2,end_row=2}).all > 1")
         rpc('nvim_ui_try_resize', [190, 45])
-        time.sleep(.1)
-        assert lua("W.refresh(); return #vim.api.nvim_tabpage_list_wins(W.state.tab) == 4")
+        wait("return #vim.api.nvim_tabpage_list_wins(W.state.tab) == 4")
+        lua("""T.registry[a].name = '계획 | 긴한글제목 English plan title for resize testing'
+W.refresh(); W.state.timer:stop()
+resize_events = 0
+vim.api.nvim_create_autocmd('WinResized', {callback=function() resize_events=resize_events+1 end})
+""")
+        def title_state():
+            return lua("""local s=W.state
+local info=vim.fn.getwininfo(s.docs)[1]
+return {width=info.width-info.textoff, aiwidth=vim.fn.getwininfo(s.ai)[1].width-vim.fn.getwininfo(s.ai)[1].textoff,
+  doc=vim.api.nvim_buf_get_lines(s.docs_buf,4,5,false)[1], owner=vim.api.nvim_buf_get_lines(s.docs_buf,6,7,false)[1],
+  ai=vim.api.nvim_buf_get_lines(s.ai_buf,0,1,false)[1], name=T.registry[a].name, path=R.items()[2].path,
+  height=vim.api.nvim_win_text_height(s.docs,{start_row=4,end_row=4}).all, events=resize_events}
+""")
+        lua("vim.api.nvim_win_set_width(W.state.docs, 18); vim.api.nvim_win_set_width(W.state.ai, 18)")
+        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 18 and vim.api.nvim_win_get_width(W.state.ai) == 18 and vim.api.nvim_buf_get_lines(W.state.docs_buf,4,5,false)[1]:match('%.%.%.$') ~= nil")
+        narrow = title_state()
+        assert narrow['doc'].startswith('> 긴한글') and narrow['doc'].endswith('...') and narrow['height'] == 1, narrow
+        assert lua("local s=W.state; local x=vim.api.nvim_buf_get_lines(s.docs_buf,4,5,false)[1]; return vim.fn.strdisplaywidth(x)") <= narrow['width']
+        assert lua("local s=W.state; return vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(s.ai_buf,0,1,false)[1])") <= narrow['aiwidth']
+        assert narrow['owner'].endswith('...') and narrow['ai'].endswith('...'), narrow
+        lua("resize_events=0; vim.api.nvim_win_set_width(W.state.docs, 40); vim.api.nvim_win_set_width(W.state.ai, 40)")
+        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 40 and vim.api.nvim_win_get_width(W.state.ai) == 40 and vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(W.state.docs_buf,4,5,false)[1]) > 18")
+        wide = title_state()
+        assert len(wide['doc']) > len(narrow['doc']) and len(wide['ai']) > len(narrow['ai']), (narrow, wide)
+        assert wide['name'] == narrow['name'] and wide['path'] == narrow['path'] and wide['path'].endswith('긴한글제목 English document title for resize testing.md'), wide
+        assert lua("local s=W.state; return vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(s.docs_buf,4,5,false)[1])") <= wide['width']
+        assert lua("local s=W.state; return vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(s.docs_buf,6,7,false)[1])") <= wide['width']
+        lua("resize_events=0; vim.api.nvim_win_set_width(W.state.docs, 18); vim.api.nvim_win_set_width(W.state.ai, 18)")
+        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 18 and vim.api.nvim_win_get_width(W.state.ai) == 18 and vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(W.state.docs_buf,4,5,false)[1]) <= 18")
+        restored = title_state()
+        assert all(restored[key] == narrow[key] for key in ('doc', 'owner', 'ai', 'name', 'path')), (narrow, restored)
+        assert lua("return vim.fn.readfile(q)[1] == '# Second'")
+        lua("W.state.timer:start(1000,1000,vim.schedule_wrap(W.refresh))")
         lua("""local cmd={vim.fn.exepath('node'),'-e','setInterval(()=>{},1000)'}
 review=assert(T.spawn({cmd=cmd,role='review',name='Review',env={AGENT_PARENT_ID=tostring(a)}}))
 c=assert(T.spawn({cmd=cmd,role='plan',name='C'}))

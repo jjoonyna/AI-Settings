@@ -40,7 +40,7 @@ local ok, failure = xpcall(function()
   assert(#s.rows == 5, 'selected plan and children listed')
   for i, id in ipairs({ a, b, d, c, orphan }) do assert(s.rows[i].entry.id == id, 'group order') end
   local rendered = vim.api.nvim_buf_get_lines(s.ai_buf, 0, -1, false)
-  assert(rendered[1]:find('● 계획 | A', 1, true) and rendered[3]:find('    ● 작업 | B', 1, true), vim.inspect(rendered))
+  assert(rendered[1]:find('● 계획|A', 1, true) and rendered[3]:find('    ● 작업|B', 1, true), vim.inspect(rendered))
   assert(W.select(orphan, false), 'orphan remains selectable')
   assert(W.select(a, false))
   local entry = T.registry[a]
@@ -118,20 +118,29 @@ local ok, failure = xpcall(function()
     vim.fn.writefile(previous, p); s.document = saved; W.refresh()
   end
   W.refresh()
-  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 0, 1, false)[1]:find('[검토 대기] first', 1, true), 'document status precedes title')
+  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 0, 1, false)[1] == '> first', 'selected document title has no status label')
   local items = R.items()
   local first, second = items[1], items[2]
   local list = vim.api.nvim_buf_get_lines(s.docs_buf, 0, -1, false)
-  assert(list[2] == '' and list[3] == '  ' .. T.registry[a].name and list[4] == ''
-    and list[6] == '' and list[7] == '  ' .. T.registry[a].name and list[8] == '', 'parent and own plan titles with spacing')
+  assert(list[2] == '' and list[3] == '  계획|A' and list[4] == ''
+    and list[6] == '' and list[7] == '  계획|A' and list[8] == '', 'parent and own plan titles with spacing')
   local get_items = R.items
+  for _, status in ipairs({ 'review_pending', 'approved', 'changes_requested', 'unknown' }) do
+    R.items = function()
+      local copy = vim.deepcopy(items)
+      copy[1].status, copy[1].path = status, root .. '/계획 | 제목.md'
+      return copy
+    end
+    W.refresh()
+    assert(vim.api.nvim_buf_get_lines(s.docs_buf, 0, 1, false)[1] == '> 계획|제목', 'no status label: ' .. status)
+  end
   R.items = function()
     local copy = vim.deepcopy(items)
     copy[1].owner, copy[1].task_id, copy[1].parent_id = d, T.registry[d].task_id, a
     return copy
   end
   W.refresh()
-  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  ' .. T.registry[a].name, 'review parent title')
+  assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  계획|A', 'review parent title')
   R.items = function()
     local copy = vim.deepcopy(items)
     copy[1].parent_id = c
@@ -176,8 +185,27 @@ local ok, failure = xpcall(function()
   assert(vim.api.nvim_win_get_cursor(s.docs)[1] == 1, 'cursor follows the same document after reorder')
   R.items = get_items; W.refresh()
   assert(vim.api.nvim_win_get_cursor(s.docs)[1] == 5, 'cursor follows the document when order is restored')
-  assert(vim.wo[s.docs].wrap and vim.wo[s.docs].linebreak and not vim.wo[s.ai].wrap, 'only document list wraps')
-  assert(vim.api.nvim_win_text_height(s.docs, { start_row = 4, end_row = 4 }).all > 1, 'long document title wraps')
+  assert(not vim.wo[s.docs].wrap and not vim.wo[s.docs].linebreak and not vim.wo[s.ai].wrap and vim.wo[s.body].wrap, 'only body wraps')
+  assert(vim.api.nvim_win_text_height(s.docs, { start_row = 4, end_row = 4 }).all == 1 and list[5]:match('%.%.%.$'), 'long document title truncates')
+  do
+    local original = T.registry[a].name
+    local long = '계획 | 긴한글제목 English | preserved ' .. ('가나다'):rep(12)
+    T.registry[a].name = long
+    W.refresh()
+    local ai = vim.api.nvim_buf_get_lines(s.ai_buf, 0, 1, false)[1]
+    local owner = vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1]
+    assert(ai:match('%.%.%.$') and owner:match('%.%.%.$'), 'long titles truncate')
+    assert(vim.fn.strdisplaywidth(ai) <= vim.fn.getwininfo(s.ai)[1].width - vim.fn.getwininfo(s.ai)[1].textoff, 'AI text width')
+    assert(vim.fn.strdisplaywidth(owner) <= vim.fn.getwininfo(s.docs)[1].width - vim.fn.getwininfo(s.docs)[1].textoff, 'owner text width')
+    assert(T.registry[a].name == long, 'stored title unchanged')
+    vim.o.columns = 70; W.refresh()
+    vim.o.columns = 190; W.refresh()
+    assert(vim.api.nvim_buf_get_lines(s.ai_buf, 0, 1, false)[1] == ai
+      and vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == owner, 'resize restores titles from source')
+    T.registry[a].name = original
+    W.refresh()
+    assert(vim.api.nvim_buf_get_lines(s.docs_buf, 2, 3, false)[1] == '  계획|A', 'full title restored')
+  end
   vim.api.nvim_set_current_win(s.docs)
   vim.api.nvim_win_set_cursor(s.docs, { 2, 0 })
   vim.fn.maparg('j', 'n', false, true).callback()
