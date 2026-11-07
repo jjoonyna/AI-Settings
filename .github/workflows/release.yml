@@ -1,0 +1,65 @@
+name: Build release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version (vX.Y.Z)
+        required: true
+        default: v0.0.3
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Prepare Inno Setup
+        shell: pwsh
+        run: |
+          $file = "$env:RUNNER_TEMP\innosetup.exe"
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-6_6_1/innosetup-6.6.1.exe' -OutFile $file
+          if ((Get-FileHash $file -Algorithm SHA256).Hash -ne 'D243CE440C02705530699554FB9612B9B2BD7A2A90629CDB7F41E66F5FAEB91F') { throw 'Inno Setup hash mismatch' }
+          $dir = "$env:RUNNER_TEMP\inno"
+          $p = Start-Process $file -ArgumentList '/CURRENTUSER','/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/PORTABLE=1','/NOICONS','/TASKS=',"/DIR=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Inno Setup preparation failed: $($p.ExitCode)" }
+      - name: Test
+        env:
+          ISCC_PATH: ${{ runner.temp }}\inno\ISCC.exe
+        run: node --test tests/installer.test.mjs tests/runtime.test.mjs tests/session-events.test.mjs
+      - name: Build
+        shell: pwsh
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          $version = if ($env:EVENT_NAME -eq 'push') { $env:TAG_VERSION } else { $env:INPUT_VERSION }
+          ./scripts/build-installer.ps1 -Version $version -OutputDir artifacts -Iscc "$env:RUNNER_TEMP\inno\ISCC.exe"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: installer
+          path: artifacts/*
+          if-no-files-found: error
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: installer
+          path: artifacts
+      - name: Attach release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" "artifacts/AI-Settings-Setup-${TAG}.exe" "artifacts/AI-Settings-User-Guide.ko.pdf" --clobber
