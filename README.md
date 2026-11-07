@@ -6,9 +6,9 @@ Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. �
 
 Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
-[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 설치할 버전의 **Source code (zip)**을 내려받습니다. 압축을 푼 폴더에서 `install.cmd`를 실행합니다.
+[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.3.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
 
-기존 버전에서 업데이트할 때도 새 릴리즈 ZIP을 풀고 `install.cmd`를 다시 실행한 뒤 Neovim을 다시 엽니다.
+대체 방법으로 **Source code (zip)**을 내려받아 압축을 풀고 `install.cmd`를 실행할 수 있습니다. EXE는 코드 서명되지 않았습니다.
 
 Git으로 저장소를 받아 설치할 수도 있습니다.
 
@@ -17,9 +17,9 @@ git clone https://github.com/jjoonyna/AI-Settings.git
 .\AI-Settings\install.cmd
 ```
 
-메뉴에서 **Claude + Codex** 또는 **Codex만** 선택합니다. Neovim·공통 규칙·상태줄·디자인/PPT 스킬이 선택한 구성에 맞춰 자동 설치됩니다. 설정 배치에는 관리자 권한이나 symlink가 필요하지 않지만 필수 프로그램 설치는 설치 관리자가 권한을 요청할 수 있습니다. 다운로드에는 네트워크가 필요합니다.
+EXE에서는 마법사에서, ZIP 또는 Git의 `install.cmd`에서는 콘솔 메뉴에서 **Claude + Codex** 또는 **Codex만** 선택합니다. Neovim·공통 규칙·상태줄·디자인/PPT 스킬이 선택한 구성에 맞춰 자동 설치됩니다. 설정 배치에는 관리자 권한이나 symlink가 필요하지 않지만 필수 프로그램 설치는 설치 관리자가 권한을 요청할 수 있습니다. 다운로드에는 네트워크가 필요합니다.
 
-`install.cmd`는 성공·실패 후 키 입력을 기다리므로 오류가 나도 창이 바로 닫히지 않습니다. 설치 로그는 `~/.ai-settings/logs/install-<시각>.log`에 남습니다. Neovim을 연 것만으로 설정이 설치되지는 않습니다. 설치 완료 후 Neovim을 다시 열고 일반 모드에서 Space → a → a를 누릅니다. Codex 전용 구성이면 Codex만 표시됩니다.
+설치 중 콘솔에 자세한 진행 내용이 표시됩니다. 실패하면 오류 코드와 로그 위치를 확인하고 EXE를 다시 실행하세요. `install.cmd`는 성공·실패 후 키 입력을 기다립니다. 설치 로그는 `~/.ai-settings/logs/install-<시각>.log`에 남습니다. Neovim을 연 것만으로 설정이 설치되지는 않습니다. 설치 후 새 터미널에서 `claude` 또는 `codex`를 실행해 로그인하고 Neovim을 다시 열어 일반 모드에서 Space → a → a를 누릅니다. Codex 전용 구성이면 Codex만 표시됩니다.
 
 ```powershell
 # 비대화형 설치
@@ -65,6 +65,8 @@ AI 목록은 세션 제목과 모델을, 문서 목록은 문서 제목과 소�
 코드 작성은 Ponytail 스킬(full)로 최소 변경을 우선합니다. 리팩토링은 agent-rules-books의 Refactoring·Working Effectively with Legacy Code 스킬을 적용하고, 범위 밖 후보는 `docs/refactoring/<영역>.md`에 기록합니다. 디자인 요청에 맞춰 UI UX Pro Max·frontend-design·Impeccable을 선택해 활용합니다. PPT는 [PPT Master](https://github.com/hugohe3/ppt-master)를 사용합니다. 외부 소스는 `runtime/tool-sources.json`에 고정한 커밋으로 설치하고 원본 라이선스를 보존합니다. Impeccable 엔진은 첫 실행 시 추가 다운로드가 필요할 수 있습니다. Python 의존성은 `~/.ai-settings/python`의 별도 환경에 설치합니다.
 
 ## 제거와 복구
+
+Source code ZIP을 내려받아 압축을 푼 폴더에서 실행합니다. EXE는 별도 제거기를 만들지 않습니다.
 
 ```powershell
 .\uninstall.ps1
