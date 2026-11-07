@@ -14,6 +14,7 @@ local c = assert(T.spawn({cmd=cmd, role='plan', name='C'}))
 local d = assert(T.spawn({cmd=cmd, role='work', name='D', env={AGENT_PARENT_ID=tostring(c)}}))
 assert(W.select(b, false)); W.refresh()
 assert(#W.state.rows == 3 and W.state.rows[2].entry.id == b, 'selected parent only expanded')
+assert(vim.api.nvim_buf_get_lines(W.state.ai_buf, 2, 3, false)[1]:find('─', 1, true) == 1, 'separator between parent and child')
 assert(W.select(d, false)); W.refresh()
 assert(#W.state.rows == 3 and W.state.rows[3].entry.id == d, 'different parent expanded')
 local s = W.state
