@@ -27,7 +27,7 @@ jobs:
       - name: Test
         env:
           ISCC_PATH: ${{ runner.temp }}\inno\ISCC.exe
-        run: node --test tests/installer.test.mjs tests/runtime.test.mjs tests/session-events.test.mjs
+        run: node --test tests/installer.test.mjs tests/runtime.test.mjs tests/session-events.test.mjs tests/release.test.mjs
       - name: Build
         shell: pwsh
         env:
@@ -49,6 +49,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d68200220
+        with:
+          node-version: 22
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: installer
@@ -58,8 +62,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: |
-          if ! gh release view "$TAG" > /dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
-          fi
-          gh release upload "$TAG" "artifacts/AI-Settings-Setup-${TAG}.exe" "artifacts/AI-Settings-User-Guide.ko.pdf" --clobber
+        run: node scripts/release.mjs "$TAG" "artifacts/AI-Settings-Setup-${TAG}.exe" "artifacts/AI-Settings-User-Guide.ko.pdf" "$RUNNER_TEMP/release-notes.md"
