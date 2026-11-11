@@ -16,6 +16,17 @@ return {
     opts = {
       window = { width = 35 },
       filesystem = {
+        commands = {
+          open = function(state)
+            local workspace = require('config.agent.workspace')
+            local node = state.tree:get_node()
+            if workspace.active() and vim.api.nvim_get_current_tabpage() == workspace.state.tab and node and node.type == 'file' then
+              workspace.open_file(node.path or node:get_id())
+            else
+              require('neo-tree.sources.filesystem.commands').open(state)
+            end
+          end,
+        },
         filtered_items = { visible = true, hide_dotfiles = false, hide_gitignored = false },
       },
     },

@@ -63,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix='ai-workspace-ui-') as folder:
         rpc('nvim_ui_attach', [190, 45, {'rgb': True, 'ext_linegrid': True}])
         lua("""
 vim.opt.rtp:prepend(vim.fn.stdpath('config'))
+vim.g.mapleader = ' '
 vim.o.mouse = 'a'
 dofile(vim.fn.stdpath('config') .. '/lua/config/keymaps.lua')
 W, T, R = require('config.agent.workspace'), require('config.agent.terminal'), require('config.agent.reviews')
@@ -205,7 +206,52 @@ W.select(b,true); W.refresh()
         time.sleep(.6)
         click('ai', ai_line(review_id), 8)
         wait('return W.state.selected == review and W.state.expanded == a')
-        print('PASS embed UI: terminal input focus, AI/document mouse selection, independent selection, hidden live job, narrow/restore')
+        # Exercise actual input and a real Neo-tree with live terminal jobs at 40 columns.
+        rpc('nvim_ui_try_resize', [40, 30])
+        lua("W.refresh(); vim.api.nvim_set_current_win(W.state.chat); vim.cmd('stopinsert')")
+        rpc('nvim_input', [' al'])
+        wait("return W.state.ai and vim.api.nvim_win_is_valid(W.state.ai)")
+        rpc('nvim_input', [' al'])
+        wait("return W.state.ai == nil")
+        rpc('nvim_input', [' al'])
+        wait("return W.state.ai and vim.api.nvim_win_is_valid(W.state.ai)")
+        rpc('nvim_input', [' al'])
+        wait("return W.state.ai == nil")
+        rpc('nvim_input', [' ad'])
+        wait("return W.state.docs and vim.api.nvim_win_is_valid(W.state.docs)")
+        rpc('nvim_input', [' ad'])
+        wait("return W.state.docs == nil")
+        rpc('nvim_input', [' ad'])
+        wait("return W.state.docs and vim.api.nvim_win_is_valid(W.state.docs)")
+        rpc('nvim_input', [' ad'])
+        wait("return W.state.docs == nil")
+        lua("W.select(a,false); W.refresh()")
+        assert lua("return W.state.ai == nil and W.state.docs == nil")
+        rpc('nvim_ui_try_resize', [50, 30])
+        rpc('nvim_input', [' ad'])
+        wait("return W.state.docs and vim.api.nvim_win_is_valid(W.state.docs)")
+        rpc('nvim_input', [' ad'])
+        wait("return W.state.docs == nil")
+        rpc('nvim_ui_try_resize', [40, 30])
+        lua("""local lazy=vim.fn.stdpath('data')..'/lazy/'
+for _, name in ipairs({'plenary.nvim','nui.nvim','nvim-web-devicons','neo-tree.nvim'}) do vim.opt.rtp:append(lazy..name) end
+local opts
+for _, plugin in ipairs(dofile(vim.fn.stdpath('config')..'/lua/plugins/ui.lua')) do if plugin[1]=='nvim-neo-tree/neo-tree.nvim' then opts=plugin.opts end end
+require('neo-tree').setup(opts)
+local root=vim.env.AGENT_HUB_HOME..'/tree'
+vim.fn.mkdir(root,'p')
+file=root..'/한글 file.txt'; vim.fn.writefile({'contents'},file)
+W.state.cwd=root
+vim.api.nvim_set_current_win(W.state.chat)
+""")
+        rpc('nvim_input', [' ae'])
+        wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return s.tree and s.bufnr and #vim.api.nvim_buf_get_lines(s.bufnr,0,-1,false)>=2")
+        lua("local s=require('neo-tree.sources.manager').get_state('filesystem'); vim.api.nvim_set_current_win(s.winid); vim.api.nvim_win_set_cursor(s.winid,{2,0})")
+        rpc('nvim_input', ['<CR>'])
+        wait("return W.state.body and vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(W.state.body))) == vim.fs.normalize(file)")
+        assert lua("return vim.api.nvim_win_get_buf(W.state.chat)==T.registry[a].buf and vim.fn.jobwait({T.registry[a].chan,T.registry[b].chan},0)[1]==-1 and vim.fn.jobwait({T.registry[b].chan},0)[1]==-1")
+        assert lua("return W.open_file(file) and vim.api.nvim_win_get_buf(W.state.body)==vim.fn.bufnr(file)")
+        print('PASS embed UI: terminal input focus, AI/document mouse selection, independent selection, hidden live job, 40/50 columns, real Neo-tree and live jobs')
     finally:
         try:
             process.stdin.write(msgpack.packb([2, 'nvim_command', ['qa!']], use_bin_type=True))
