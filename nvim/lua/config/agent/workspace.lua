@@ -117,13 +117,15 @@ function M.select_review(id)
   for _, item in ipairs(s.reviews) do
     if item.id == id then
       s.views = s.views or {}
-      if valid(s.body) and s.document then s.views[s.document] = api.nvim_win_call(s.body, vim.fn.winsaveview) end
+      if valid(s.body) and s.document and not s.file_buf then s.views[s.document] = api.nvim_win_call(s.body, vim.fn.winsaveview) end
+      s.file_buf, s.hide_body, s.show_body, s.narrow = nil, false, true, 'body'
       s.document = id; M.refresh(); return true
     end
   end
 end
 function M.decision(decision)
   local s = M.state
+  if s and s.file_buf then return end
   local r = s and api.nvim_get_current_win() == s.docs and row('docs') or nil
   local id = s and api.nvim_get_current_win() == s.docs and (r and r.id) or nil
   if s and api.nvim_get_current_win() ~= s.docs then id = s.document end
@@ -140,7 +142,12 @@ local function ensure(name, show, anchor, side, buf, title, width)
   if not show and valid(s[name]) then
     -- Restore focus to the conversation only if its own pane has disappeared.
     if api.nvim_get_current_win() == s[name] then api.nvim_set_current_win(s.chat) end
-    api.nvim_win_close(s[name], true); s[name] = nil
+    local hidden = vim.o.hidden
+    if name == 'body' and s.file_buf then vim.o.hidden = true end
+    local ok, err = pcall(api.nvim_win_close, s[name], true)
+    vim.o.hidden = hidden
+    if not ok then error(err) end
+    s[name] = nil
   elseif show and not valid(s[name]) then
     s[name] = api.nvim_open_win(buf, false, { split = side, win = anchor })
     vim.wo[s[name]].number, vim.wo[s[name]].relativenumber = false, false
@@ -155,14 +162,40 @@ end
 function M.layout()
   local s = M.state
   if not s or not api.nvim_tabpage_is_valid(s.tab) or api.nvim_get_current_tabpage() ~= s.tab or not valid(s.chat) then return end
-  local cols, has = vim.o.columns, #s.reviews > 0
-  ensure('docs', has and cols >= 60 and (cols >= 145 or s.show_docs), valid(s.body) and s.body or s.chat, 'right', s.docs_buf, ' 문서 목록', 26)
-  ensure('body', has and not s.hide_body and cols >= 45 and (cols >= 85 or s.show_body), s.chat, 'right', s.body_buf, ' 사용자 검토')
-  ensure('ai', not s.hide_ai and cols >= 45 and (cols >= 85 or s.show_ai), s.chat, 'left', s.ai_buf, ' AI 목록', 28)
-  if valid(s.docs) then vim.wo[s.docs].wrap, vim.wo[s.docs].linebreak = false, false end
-  if valid(s.body) then vim.wo[s.body].wrap, vim.wo[s.body].linebreak = true, true end
+  local cols, has = vim.o.columns, #s.reviews > 0 or s.file_buf ~= nil
+  local narrow = cols < 85
+  local show = {
+    docs = not s.hide_docs and (#s.reviews > 0 or s.show_docs) and (narrow and s.narrow == 'docs' or not narrow and (cols >= 145 or s.show_docs)),
+    body = has and not s.hide_body and (narrow and s.narrow == 'body' or not narrow),
+    ai = not s.hide_ai and (narrow and s.narrow == 'ai' or not narrow),
+  }
+  for _, kind in ipairs({ 'docs', 'body', 'ai' }) do
+    if not show[kind] then ensure(kind, false) end
+  end
+  ensure('docs', show.docs, valid(s.body) and s.body or s.chat, 'right', s.docs_buf, ' 문서 목록', math.min(26, math.max(1, cols - 12)))
+  ensure('body', show.body, s.chat, 'right', s.body_buf, ' 사용자 검토')
+  ensure('ai', show.ai, s.chat, 'left', s.ai_buf, ' AI 목록', math.min(28, math.max(1, cols - 12)))
   if valid(s.body) then
-    local remaining = cols - (valid(s.ai) and api.nvim_win_get_width(s.ai) + 1 or 0)
+    local target = s.file_buf or s.body_buf
+    if api.nvim_win_get_buf(s.body) ~= target then
+      local hidden = vim.o.hidden
+      vim.o.hidden = true
+      local ok, err = pcall(api.nvim_win_set_buf, s.body, target)
+      vim.o.hidden = hidden
+      if not ok then error(err) end
+    end
+  end
+  if valid(s.docs) then vim.wo[s.docs].wrap, vim.wo[s.docs].linebreak = false, false end
+  if valid(s.body) then
+    vim.wo[s.body].wrap, vim.wo[s.body].linebreak = true, true
+    vim.wo[s.body].winbar = s.file_buf and ' 파일' or ' 사용자 검토'
+  end
+  if valid(s.body) then
+    local tree_width = 0
+    for _, win in ipairs(api.nvim_tabpage_list_wins(s.tab)) do
+      if vim.bo[api.nvim_win_get_buf(win)].filetype == 'neo-tree' then tree_width = tree_width + api.nvim_win_get_width(win) + 1 end
+    end
+    local remaining = cols - tree_width - (valid(s.ai) and api.nvim_win_get_width(s.ai) + 1 or 0)
       - (valid(s.docs) and api.nvim_win_get_width(s.docs) + 1 or 0)
     pcall(api.nvim_win_set_width, s.chat, math.max(12, math.floor((remaining - 1) / 2)))
   end
@@ -277,7 +310,7 @@ function M.refresh()
   end
   M.layout()
   local body_changed
-  if body then
+  if body and not s.file_buf then
     local marks = {}
     if valid(s.body) then
       local info = vim.fn.getwininfo(s.body)[1]
@@ -302,7 +335,7 @@ function M.refresh()
     and not (document_changed and current == s.body) then
     pcall(api.nvim_win_set_cursor, current, cursor)
   end
-  if document_changed and valid(s.body) then
+  if document_changed and valid(s.body) and not s.file_buf then
     api.nvim_win_call(s.body, function() vim.fn.winrestview((s.views or {})[s.document] or { lnum = 1, col = 0, topline = 1 }) end)
   end
   -- TextChanged does not fire for the review buffer while the terminal has focus.
@@ -317,7 +350,7 @@ function M.open(focus_list)
     M.refresh()
   else
     vim.cmd('tabnew')
-    local s = { tab = api.nvim_get_current_tabpage(), chat = api.nvim_get_current_win(), rows = {}, reviews = {} }
+    local s = { tab = api.nvim_get_current_tabpage(), chat = api.nvim_get_current_win(), rows = {}, reviews = {}, cwd = vim.fn.getcwd() }
     M.state = s
     vim.t.agent_workspace = true
     vim.treesitter.language.register('markdown', 'agent_review_markdown')
@@ -433,11 +466,63 @@ end
 function M.show(kind)
   M.open(false)
   local s = M.state
+  s.narrow = kind
   s['show_' .. kind] = true
   if kind == 'body' then s.hide_body = false end
   if kind == 'ai' then s.hide_ai = false end
+  if kind == 'docs' then s.hide_docs = false end
   M.layout()
   if valid(s[kind]) then api.nvim_set_current_win(s[kind]) end
+end
+function M.toggle(kind)
+  local existed = M.active() and api.nvim_get_current_tabpage() == M.state.tab
+  if not existed then M.show(kind); return end
+  local s = M.state
+  if valid(s[kind]) then
+    if s.narrow == kind then s.narrow = nil end
+    s['hide_' .. kind] = true
+    s['show_' .. kind] = false
+    M.layout()
+  else
+    M.show(kind)
+  end
+end
+function M.open_file(path)
+  local s = M.state
+  if not s or vim.fn.filereadable(path) ~= 1 then
+    vim.notify('Cannot read file: ' .. path, vim.log.levels.WARN)
+    return false
+  end
+  local ok, buf = pcall(function()
+    local b = vim.fn.bufadd(path)
+    vim.fn.bufload(b)
+    return b
+  end)
+  if not ok or not api.nvim_buf_is_loaded(buf) then
+    vim.notify('Cannot read file: ' .. path, vim.log.levels.WARN)
+    return false
+  end
+  if vim.o.columns < 85 then
+    local manager = package.loaded['neo-tree.sources.manager']
+    if manager then manager.close('filesystem', 'left') end
+  end
+  s.file_buf, s.hide_body, s.show_body, s.narrow = buf, false, true, 'body'
+  M.layout()
+  if not valid(s.body) then
+    vim.notify('Cannot display file: ' .. path, vim.log.levels.WARN)
+    return false
+  end
+  api.nvim_set_current_win(s.body)
+  return true
+end
+function M.explore()
+  M.open(false)
+  local s = M.state
+  if vim.o.columns < 85 then s.narrow = 'explorer'; M.layout() end
+  local ok, err = pcall(function()
+    require('neo-tree.command').execute({ source = 'filesystem', action = 'focus', position = 'left', dir = s.cwd })
+  end)
+  if not ok then vim.notify('Cannot open explorer: ' .. tostring(err), vim.log.levels.WARN) end
 end
 function M.active() return M.state and api.nvim_tabpage_is_valid(M.state.tab) end
 function M.spawn_window()
