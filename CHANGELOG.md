@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.6
+
+- Neovim에서 `Space e`는 현재 작업 디렉터리, `Space E`는 프로젝트 루트를 Neo-tree로 엽니다. `Space f e`와 `Space f E` 동작은 유지합니다.
+
 ## 0.0.5
 
 - AI 목록과 문서 목록을 `Space a l`, `Space a d`로 토글하고 `Space a e`로 프로젝트 파일을 탐색해 작업 공간 본문에서 편집합니다. 검토 문서 선택과 미저장 파일을 보존합니다.

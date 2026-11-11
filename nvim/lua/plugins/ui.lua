@@ -13,6 +13,10 @@ return {
   -- ── 파일트리: 시작 시 자동 표시 (설계 §4-2-2) ────────
   {
     "nvim-neo-tree/neo-tree.nvim",
+    keys = {
+      { "<leader>e", "<leader>fE", desc = "Explorer NeoTree (cwd)", remap = true },
+      { "<leader>E", "<leader>fe", desc = "Explorer NeoTree (Root Dir)", remap = true },
+    },
     opts = {
       window = { width = 35 },
       filesystem = {
