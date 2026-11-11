@@ -4,7 +4,7 @@ function Update-InstallerPath {
     (Join-Path $env:APPDATA 'npm'), (Join-Path $env:LOCALAPPDATA 'Microsoft/WinGet/Links'),
     (Join-Path $env:USERPROFILE '.local/bin'), (Join-Path $env:ProgramFiles 'Neovim/bin'),
     (Join-Path $env:ProgramFiles 'nodejs'))
-  $env:Path = (($parts | Where-Object { $_ }) -join ';')
+  $env:Path = (($parts | Where-Object { $_ }) -split ';' | Where-Object { $_ } | Select-Object -Unique) -join ';'
 }
 function Install-WingetDependency([string]$Command, [string]$Package, [switch]$DryRun) {
   $wasAvailable = [bool](Get-Command $Command -ErrorAction SilentlyContinue)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.4
+
+### 설치·설정
+
+- Windows 설치 중 PATH 항목이 중복으로 누적되어 "Environment variable name or value is too long." 오류로 설치가 중단되던 문제를 수정했습니다.
+
 ## 0.0.3
 
 ### 설치·설정

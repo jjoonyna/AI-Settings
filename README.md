@@ -6,7 +6,7 @@ Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. �
 
 Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
-[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.3.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
+[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.4.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
 
 대체 방법으로 **Source code (zip)**을 내려받아 압축을 풀고 `install.cmd`를 실행할 수 있습니다. EXE는 코드 서명되지 않았습니다.
 
