@@ -248,3 +248,41 @@ test('session.mjs report rejects ASCII-only text with ?? as suspected encoding d
   const ok = spawnSync(process.execPath, [script, 'report', '-'], { input: '완료 ?? 확인', env, encoding: 'utf8' });
   assert.doesNotMatch(ok.stderr, /인코딩 손상 의심/);
 });
+test('Claude secret deny rules merge with user permissions and are removed without touching user rules', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-deny-'));
+  try {
+    const home = path.join(temp, 'home'), nvim = path.join(temp, 'nvim'), file = path.join(home, '.claude/settings.json');
+    const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
+    const options = { home, nvim, mode: 'both', skipTools: true };
+    // Fresh install: managed deny rules and defaultMode applied.
+    install(options);
+    const fresh = read();
+    assert.equal(fresh.permissions.defaultMode, 'auto');
+    for (const rule of ['Read(//**/.env)', 'Edit(//**/.env)', 'Read(//**/.env.*)', 'Read(~/.ssh/**)', 'Edit(~/.aws/**)']) assert.ok(fresh.permissions.deny.includes(rule), rule);
+    const managedCount = fresh.permissions.deny.length;
+    // Switching to Codex removes the managed rules and the now-empty permissions key.
+    install({ ...options, mode: 'codex' });
+    assert.equal(read().permissions, undefined);
+    fs.rmSync(path.join(home, '.ai-settings'), { recursive: true, force: true });
+    fs.writeFileSync(file, JSON.stringify({ permissions: { allow: ['Bash(mine)'], deny: ['Bash(rm *)', 'Read(//**/.env)'], ask: ['Bash(ask-me)'], defaultMode: 'plan' } }));
+    install(options);
+    const merged = read();
+    assert.deepEqual(merged.permissions.allow, ['Bash(mine)']);
+    assert.deepEqual(merged.permissions.ask, ['Bash(ask-me)']);
+    assert.equal(merged.permissions.deny[0], 'Bash(rm *)');
+    assert.equal(merged.permissions.deny.length, managedCount + 1);
+    assert.equal(new Set(merged.permissions.deny).size, merged.permissions.deny.length);
+    assert.equal(merged.permissions.defaultMode, 'auto');
+    // Reinstall adds no duplicates; a user rule added later survives removal.
+    install(options);
+    assert.deepEqual(read().permissions.deny, merged.permissions.deny);
+    const later = read(); later.permissions.deny.push('Read(later-rule)'); later.permissions.allow.push('Bash(later)');
+    fs.writeFileSync(file, JSON.stringify(later));
+    install({ ...options, mode: 'codex' });
+    const after = read();
+    assert.deepEqual(after.permissions.deny, ['Bash(rm *)', 'Read(//**/.env)', 'Read(later-rule)']);
+    assert.deepEqual(after.permissions.allow, ['Bash(mine)', 'Bash(later)']);
+    assert.deepEqual(after.permissions.ask, ['Bash(ask-me)']);
+    assert.equal(after.permissions.defaultMode, 'plan');
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});

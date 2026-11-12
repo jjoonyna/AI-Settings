@@ -4,7 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { mergeJson, mergeToml, unmergeHookConfig, tomlValues, stripManagedStopHooks, mergeHooks } from './config-merge.mjs';
+import { mergeJson, mergeToml, unmergeHookConfig, tomlValues, stripManagedStopHooks, mergeHooks, mergePermissions } from './config-merge.mjs';
 import { commonEvents } from './runtime/session-events.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -199,6 +199,7 @@ export function install(options) {
       const existingHookGroups = { ...existing.hooks, Stop: stripManagedStopHooks(existing.hooks?.Stop || [], [legacyStop]) };
       const merged = mergeJson(existing, template);
       merged.hooks = mergeHooks(existingHookGroups, template.hooks);
+      Object.assign(merged.permissions, mergePermissions(existing.permissions, template.permissions));
       put(target, JSON.stringify(merged, null, 2) + '\n');
       manifest.configs[target] = { type: 'json', managed: template, original: old.configs?.[target]?.original ?? existing };
     } else {

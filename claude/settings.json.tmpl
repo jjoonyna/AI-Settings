@@ -1,6 +1,40 @@
 {
   "permissions": {
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "deny": [
+      "Read(//**/.env)",
+      "Read(//**/.env.*)",
+      "Read(//**/*.pem)",
+      "Read(//**/*.key)",
+      "Read(//**/*.p12)",
+      "Read(//**/*.pfx)",
+      "Read(//**/id_rsa*)",
+      "Read(//**/id_ed25519*)",
+      "Read(//**/id_ecdsa*)",
+      "Read(//**/secrets/**)",
+      "Read(//**/.npmrc)",
+      "Read(//**/.pypirc)",
+      "Read(//**/.netrc)",
+      "Read(//**/*.credentials.json)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Edit(//**/.env)",
+      "Edit(//**/.env.*)",
+      "Edit(//**/*.pem)",
+      "Edit(//**/*.key)",
+      "Edit(//**/*.p12)",
+      "Edit(//**/*.pfx)",
+      "Edit(//**/id_rsa*)",
+      "Edit(//**/id_ed25519*)",
+      "Edit(//**/id_ecdsa*)",
+      "Edit(//**/secrets/**)",
+      "Edit(//**/.npmrc)",
+      "Edit(//**/.pypirc)",
+      "Edit(//**/.netrc)",
+      "Edit(//**/*.credentials.json)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.aws/**)"
+    ]
   },
   "model": "opus",
   "hooks": {

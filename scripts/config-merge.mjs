@@ -157,8 +157,30 @@ export function mergeHooks(current, managed) {
   return result;
 }
 
+const permissionLists = ["allow", "deny", "ask"];
+
+// Union keeps user rules in order and appends managed rules once.
+export function mergePermissions(current, managed) {
+  const result = {};
+  for (const key of permissionLists) {
+    if (!Array.isArray(managed?.[key])) continue;
+    const base = Array.isArray(current?.[key]) ? current[key] : [];
+    result[key] = [...base, ...managed[key].filter(rule => !base.includes(rule))];
+  }
+  return result;
+}
+
 export function unmergeHookConfig(current, managed, original) {
   const result = unmergeJson(current, managed, original);
+  for (const key of permissionLists) {
+    const rules = managed.permissions?.[key], now = current.permissions?.[key];
+    if (!Array.isArray(rules) || !Array.isArray(now)) continue;
+    const before = original?.permissions?.[key];
+    const kept = now.filter(rule => !rules.includes(rule) || (Array.isArray(before) && before.includes(rule)));
+    result.permissions ||= {};
+    if (kept.length || Array.isArray(before)) result.permissions[key] = kept; else delete result.permissions[key];
+  }
+  if (result.permissions && !Object.keys(result.permissions).length && !Object.hasOwn(original || {}, "permissions")) delete result.permissions;
   for (const [event, groups] of Object.entries(managed.hooks || {})) {
     const commands = groups.flatMap(g => g.hooks || []).map(h => h.command);
     const kept = stripManagedStopHooks(current.hooks?.[event] || [], commands);
