@@ -5,7 +5,7 @@ description: 계획·작업·읽기 전용 리뷰를 연결하고 모델 선택,
 
 # 세션 실행
 
-설치된 `~/.ai-settings/POLICY.md`와 `models.json`을 따른다. Codex 계획 세션도 handoff로 별도 영구 작업·리뷰 세션을 열고 실패하면 보고하고 실행 경로를 복구한다. 이미 확인된 작업·리뷰 역할은 다시 확인하지 않는다. 사용자 홈은 실제 환경에서 찾는다. `~/.ai-settings/install.json`에서 설치 모드를 확인한다.
+설치된 `~/.ai-settings/POLICY.md`와 `models.json`을 따른다. 계획 세션은 Claude·Codex 모두 handoff로 별도 영구 작업·리뷰 세션을 열고 실패하면 보고하고 실행 경로를 복구한다. 이미 확인된 작업·리뷰 역할은 다시 확인하지 않는다. 사용자 홈은 실제 환경에서 찾는다. `~/.ai-settings/install.json`에서 설치 모드를 확인한다.
 
 설치된 `~/.ai-settings/bin/session.mjs`를 Node로 실행한다. 실제 설치 루트는 환경변수 `AI_SETTINGS_HOME`을 우선 사용한다. 구조화된 JSON 요청 파일을 프로젝트 `docs/` 아래에 쓰고 다음처럼 전달한다. 명령 경로는 실제 절대경로로 확장한다.
 
@@ -27,6 +27,7 @@ AgentHandoff({agent='claude', session='work', model='sonnet', parent_model='opus
 - `session='review'`는 읽기 전용으로 실행한다. 교차 Codex 리뷰에는 `parent_agent='claude'`와 실제 부모 모델을 전달한다. 도구가 사용률 캐시를 검증한다. plan에 보안 영향이 있으면 리뷰 prompt에 보안 점검을 지시한다.
 - Claude와 Codex 리뷰는 전체 승인으로 실행한다. 파일 수정·생성·삭제와 재위임을 금지하며 셸·외부 도구에도 적용한다. Neovim 보고는 report -로 보내고 OK를 확인한다. PowerShell에서는 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한다.
 - 에이전트 도구에 모델 지정이 지원되면 같은 등급 정책으로 명시한다. 지원되지 않는 모델 지정으로 실행하지 말고 지원되는 세션 위임 경로를 사용한다.
+- 계획 세션은 구현·리뷰를 Agent 도구(`implementer`·`reviewer` 등)로 대체하지 않고 handoff 세션을 연다. 계획 세션 안의 에이전트는 조사·설계 분석(`researcher`·`planner`·`planner-fallback`)에만 쓴다.
 - Neovim 결과 보고: `AgentReport({parent_server='...', parent_id=숫자, text='완료 범위 / 검증 결과 / 미해결 / 다음 판단'})`. 수신 실패 시 다시 보고하며 전송 성공 전 완료 종료하지 않는다.
 - Neovim 사용자 검토 표시: `AgentPlanPreview({path='프로젝트/docs/user-review/주제.md', owner=세션번호, task_id='작업 ID'})`. 기존 path 호출은 소유자가 유일하면 호환된다. CLI preview는 현재 세션·작업 ID를 전달하며 JSON 요청 파일도 받는다. 통합 화면은 현재 입력 포커스를 유지한 채 오른쪽에 표시한다. 단순 상태 갱신·완료 시 자동 호출 금지. 닫기는 승인 아님.
 - 승인·수정 요청 후에도 검토 문서를 유지한다. 부모 검증과 별도 리뷰 후 `AgentTaskComplete({owner=자식번호, task_id='정확한 작업 ID', parent_id=부모번호, verified=true, reviewed=true})` 또는 같은 JSON의 `task-complete`로 해당 소유자의 문서만 목록에서 제거한다. 원본은 보존한다. 미승인·개정·수정 요청 중인 문서는 완료 확인을 거부한다. 보고/CLI Stop/프로세스 종료는 작업 완료가 아니다. 이 확인을 마친 뒤 필요하면 기존 AgentDone으로 자식을 닫는다. 재개 부모는 task-complete에서도 정확한 저장 세션의 역할·모델을 확인한다. 미확인은 기존 선택 UI에서 확인 후 재시도하며, 확인된 plan만 완료할 수 있다. work/review 또는 미확인 역할을 plan으로 가정하지 않는다.
