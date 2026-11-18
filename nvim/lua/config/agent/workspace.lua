@@ -175,6 +175,8 @@ function M.layout()
   ensure('docs', show.docs, valid(s.body) and s.body or s.chat, 'right', s.docs_buf, ' 문서 목록', math.min(26, math.max(1, cols - 12)))
   ensure('body', show.body, s.chat, 'right', s.body_buf, ' 사용자 검토')
   ensure('ai', show.ai, s.chat, 'left', s.ai_buf, ' AI 목록', math.min(28, math.max(1, cols - 12)))
+  local ai_width = math.min(28, math.max(1, cols - 12))
+  if valid(s.ai) and api.nvim_win_get_width(s.ai) ~= ai_width then api.nvim_win_set_width(s.ai, ai_width) end
   if valid(s.body) then
     local target = s.file_buf or s.body_buf
     if api.nvim_win_get_buf(s.body) ~= target then

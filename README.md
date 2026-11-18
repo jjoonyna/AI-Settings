@@ -6,7 +6,7 @@ Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. �
 
 Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
-[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.4.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
+[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.9.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
 
 대체 방법으로 **Source code (zip)**을 내려받아 압축을 풀고 `install.cmd`를 실행할 수 있습니다. EXE는 코드 서명되지 않았습니다.
 
@@ -32,7 +32,7 @@ EXE에서는 마법사에서, ZIP 또는 Git의 `install.cmd`에서는 콘솔 �
 
 설치 위치는 기본적으로 `~/.ai-settings`, `~/.codex`, `~/.claude`와 `%LOCALAPPDATA%/nvim`입니다. `-HomeDir`·`-NvimDir`로 격리 설치할 수 있습니다. `-TrustedProjects`, `-Jdk21`, `-Python`, `-RbmRoot`, `-DocsRoot`는 기존 옵션을 유지합니다. `-SkipTools`는 오프라인 진단용으로 외부 스킬·Python 의존성 설치를 건너뛰며, `-SkipPlugins`는 Claude 플러그인 설치를 건너뜁니다.
 
-Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 `auto_review`로 설정합니다. 계획 문서 전용 권한과 리뷰 읽기 전용 샌드박스는 유지합니다. Codex 리뷰는 테스트·보고가 샌드박스에 막히면 권한 상승을 요청합니다.
+Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 `auto_review`로 설정합니다. Windows 샌드박스 기본값은 `elevated`이며 최초 구성 시 관리자 승인이 필요합니다. 설정 후 Codex 세션을 다시 시작하세요. 계획 문서 전용 권한과 리뷰 읽기 전용 샌드박스는 유지합니다. Codex 리뷰는 테스트·보고가 샌드박스에 막히면 권한 상승을 요청합니다.
 
 재설치는 관리 항목을 새 규칙으로 갱신하고 개인 MCP·플러그인·권한·지침·PC별 경로·인증·대화 기록은 보존합니다. 같은 관리 항목의 충돌은 배포 규칙을 우선합니다. 기존 폴더 링크는 독립 복사본으로 전환합니다. 백업·소유 파일·외부 도구 버전은 `~/.ai-settings`에 기록합니다. 실패하면 설정 파일 변경을 복구하며 다운로드 캐시·Python 환경은 남을 수 있습니다.
 
@@ -52,7 +52,7 @@ Claude와 Codex 리뷰는 전체 승인으로 실행합니다. 리뷰 지시로 
 
 핸드오프·보고·검토는 설치된 `session-workflow` 스킬과 `bin/session.mjs`를 사용합니다. Neovim에서 AI를 호출하면 작업 공간이 열립니다. 작업 공간은 왼쪽부터 AI 목록·대화·문서 본문·문서 목록이며 문서가 없으면 2영역입니다. `Agent`·`AgentNew`로 연 대화는 현재 창의 왼쪽 목록에 쌓입니다. 다른 창의 세션은 `:AgentInstances`에서 연결합니다. AI를 바꿔도 숨긴 작업은 계속 실행됩니다. 검토 요청은 현재 대화 포커스를 유지합니다.
 
-AI 목록은 세션 제목과 모델을, 문서 목록은 문서 제목과 소유 계획 제목을 연속된 두 줄로 표시합니다. 항목 사이 구분선은 선택되지 않으며 방향키로 건너뜁니다.
+AI 목록은 28칸 폭을 유지하며 대화 창 복구와 수동 크기 변경 후에도 다시 적용됩니다. 좁은 화면에서는 기존 목록 숨김 정책을 따릅니다. AI 목록은 세션 제목과 모델을, 문서 목록은 문서 제목과 소유 계획 제목을 연속된 두 줄로 표시합니다. 항목 사이 구분선은 선택되지 않으며 방향키로 건너뜁니다.
 
 일반 모드에서 `Space a l`은 AI 목록, `Space a d`는 문서 목록을 토글합니다. `Space a e`는 작업 공간을 연 시점의 프로젝트 폴더를 Neo-tree로 탐색합니다. 파일을 Enter 또는 더블 클릭하면 대화를 유지한 채 본문에서 편집·저장할 수 있습니다. 검토 문서는 오른쪽 목록에서 선택해 다시 표시하며, 미저장 파일은 보존됩니다.
 

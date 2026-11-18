@@ -160,7 +160,7 @@ for _, kind in ipairs({'ai','docs'}) do
 end
 return true""")
         lua("vim.api.nvim_win_set_width(W.state.docs, 18); vim.api.nvim_win_set_width(W.state.ai, 18)")
-        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 18 and vim.api.nvim_win_get_width(W.state.ai) == 18 and vim.api.nvim_buf_get_lines(W.state.docs_buf,3,4,false)[1]:match('%.%.%.$') ~= nil")
+        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 18 and vim.api.nvim_win_get_width(W.state.ai) == 28 and vim.api.nvim_buf_get_lines(W.state.docs_buf,3,4,false)[1]:match('%.%.%.$') ~= nil")
         narrow = title_state()
         assert separators_fit()
         assert narrow['doc'].startswith('> 긴한글') and narrow['doc'].endswith('...') and narrow['height'] == 1, narrow
@@ -168,15 +168,19 @@ return true""")
         assert lua("local s=W.state; return vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(s.ai_buf,0,1,false)[1])") <= narrow['aiwidth']
         assert narrow['owner'].endswith('...') and narrow['ai'].endswith('...'), narrow
         lua("resize_events=0; vim.api.nvim_win_set_width(W.state.docs, 40); vim.api.nvim_win_set_width(W.state.ai, 40)")
-        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 40 and vim.api.nvim_win_get_width(W.state.ai) == 40 and vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(W.state.docs_buf,3,4,false)[1]) > 18")
+        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 40 and vim.api.nvim_win_get_width(W.state.ai) == 28 and vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(W.state.docs_buf,3,4,false)[1]) > 18")
         wide = title_state()
         assert separators_fit()
-        assert len(wide['doc']) > len(narrow['doc']) and len(wide['ai']) > len(narrow['ai']), (narrow, wide)
+        assert len(wide['doc']) > len(narrow['doc']) and wide['ai'] == narrow['ai'], (narrow, wide)
         assert wide['name'] == narrow['name'] and wide['path'] == narrow['path'] and wide['path'].endswith('긴한글제목 English document title for resize testing.md'), wide
         assert lua("local s=W.state; return vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(s.docs_buf,3,4,false)[1])") <= wide['width']
         assert lua("local s=W.state; return vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(s.docs_buf,4,5,false)[1])") <= wide['width']
         lua("resize_events=0; vim.api.nvim_win_set_width(W.state.docs, 18); vim.api.nvim_win_set_width(W.state.ai, 18)")
-        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 18 and vim.api.nvim_win_get_width(W.state.ai) == 18 and vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(W.state.docs_buf,3,4,false)[1]) <= 18")
+        wait("return resize_events > 0 and vim.api.nvim_win_get_width(W.state.docs) == 18 and vim.api.nvim_win_get_width(W.state.ai) == 28 and vim.fn.strdisplaywidth(vim.api.nvim_buf_get_lines(W.state.docs_buf,3,4,false)[1]) <= 18")
+        time.sleep(.3)
+        events = lua('return resize_events')
+        time.sleep(.3)
+        assert lua('return resize_events') == events, 'resize events must settle'
         restored = title_state()
         assert all(restored[key] == narrow[key] for key in ('doc', 'owner', 'ai', 'name', 'path')), (narrow, restored)
         assert lua("return vim.fn.readfile(q)[1] == '# Second'")
