@@ -21,7 +21,7 @@ function M.items()
   for _, item in ipairs(data.items) do
     local hash = fingerprint(item.path)
     if item.fingerprint ~= hash then
-      item.fingerprint, item.status, changed = hash, 'review_pending', true
+      item.fingerprint, item.status, item.hidden, changed = hash, 'review_pending', nil, true
       local entry = require('config.agent.terminal').registry[item.owner]
       if entry and entry.task_id == item.task_id then entry.status = 'review_pending' end
     end
@@ -48,12 +48,18 @@ function M.register(o)
     item = { id = hub.uid(), path = o.path, owner = owner, task_id = entry.task_id, parent_id = entry.parent_id }
     data.items[#data.items + 1] = item
   end
-  item.fingerprint, item.status = fingerprint(o.path), 'review_pending'
+  item.fingerprint, item.status, item.hidden = fingerprint(o.path), 'review_pending', nil
   save(data)
   entry.status = 'review_pending'
   hub.publish()
   require('config.agent.workspace').refresh()
   return 'OK review=' .. item.id
+end
+function M.hide(id)
+  local data = load()
+  for _, item in ipairs(data.items) do
+    if item.id == id then item.hidden = true; save(data); return end
+  end
 end
 function M.decide(id, decision, text)
   if decision ~= 'approved' and decision ~= 'changes_requested' then return 'FAIL: 잘못된 검토 결정' end

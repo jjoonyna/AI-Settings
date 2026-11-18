@@ -88,8 +88,8 @@ function M.spawn(opts)
     on_exit = function(id, code)
       -- 자동 종료 요청(M.done)으로 끝난 세션은 창까지 닫아 화면에 남기지 않는다.
       local e = M.entry_by_chan(id)
-      local buf = e and e.auto_close and e.buf or nil
-      if e and require('config.agent.workspace').active() and not e.auto_close then
+      local buf = e and (e.auto_close or e.role == 'plan') and e.buf or nil
+      if e and require('config.agent.workspace').active() and not e.auto_close and e.role ~= 'plan' then
         e.exit_code = code
         e.activity_status, e.status_source = code == 0 and 'interrupted' or 'error', 'process-exit'
         if e.status ~= 'complete' and e.status ~= 'review_pending' then e.status = e.activity_status end

@@ -72,7 +72,9 @@ local function ensure_chat(s)
 end
 function M.close_session(entry)
   local s = M.state
-  if not s or s.selected ~= entry.id or not ensure_chat(s) then return end
+  if not s then return end
+  if s.selected ~= entry.id then M.refresh(); return end
+  if not ensure_chat(s) then return end
   local terminal = require('config.agent.terminal')
   local function eligible(e)
     return e and e.id ~= entry.id and not e.auto_close and e.exit_code == nil and api.nvim_buf_is_valid(e.buf)
@@ -82,6 +84,20 @@ function M.close_session(entry)
   local entries = terminal.entries()
   if not candidate then
     for _, e in ipairs(entries) do if eligible(e) and e.role == 'plan' then candidate = e; break end end
+  end
+  if not candidate and entry.role == 'plan' then
+    local was_current = api.nvim_get_current_tabpage() == s.tab
+    s.timer:stop(); s.timer:close()
+    M.state = nil
+    api.nvim_del_augroup_by_name('agent_workspace')
+    vim.on_key(nil, api.nvim_create_namespace('agent_workspace_mouse'))
+    local hidden = vim.o.hidden
+    vim.o.hidden = true
+    if #api.nvim_list_tabpages() == 1 then vim.cmd('tabnew') end
+    vim.cmd('tabclose ' .. api.nvim_tabpage_get_number(s.tab))
+    vim.o.hidden = hidden
+    if was_current and s.origin_tab and api.nvim_tabpage_is_valid(s.origin_tab) then api.nvim_set_current_tabpage(s.origin_tab) end
+    return
   end
   if not candidate then
     for _, e in ipairs(entries) do if eligible(e) then candidate = e; break end end
@@ -175,6 +191,8 @@ function M.layout()
   ensure('docs', show.docs, valid(s.body) and s.body or s.chat, 'right', s.docs_buf, ' 문서 목록', math.min(26, math.max(1, cols - 12)))
   ensure('body', show.body, s.chat, 'right', s.body_buf, ' 사용자 검토')
   ensure('ai', show.ai, s.chat, 'left', s.ai_buf, ' AI 목록', math.min(28, math.max(1, cols - 12)))
+  local ai_width = math.min(28, math.max(1, cols - 12))
+  if valid(s.ai) and api.nvim_win_get_width(s.ai) ~= ai_width then api.nvim_win_set_width(s.ai, ai_width) end
   if valid(s.body) then
     local target = s.file_buf or s.body_buf
     if api.nvim_win_get_buf(s.body) ~= target then
@@ -213,6 +231,7 @@ function M.refresh()
     if not s.review_error then notify('FAIL: ' .. tostring(items)); s.review_error = true end
     return
   end
+  items = vim.tbl_filter(function(item) return not item.hidden end, items)
   s.reviews, s.rows = items, {}
   M.layout()
   local text, marks = {}, {}
@@ -349,8 +368,9 @@ function M.open(focus_list)
     api.nvim_set_current_tabpage(M.state.tab)
     M.refresh()
   else
+    local origin_tab = api.nvim_get_current_tabpage()
     vim.cmd('tabnew')
-    local s = { tab = api.nvim_get_current_tabpage(), chat = api.nvim_get_current_win(), rows = {}, reviews = {}, cwd = vim.fn.getcwd() }
+    local s = { tab = api.nvim_get_current_tabpage(), origin_tab = origin_tab, chat = api.nvim_get_current_win(), rows = {}, reviews = {}, cwd = vim.fn.getcwd() }
     M.state = s
     vim.t.agent_workspace = true
     vim.treesitter.language.register('markdown', 'agent_review_markdown')
@@ -389,7 +409,11 @@ function M.open(focus_list)
       map(b, 'a', function() M.decision('approved') end, '승인·진행')
       map(b, 'r', function() M.decision('changes_requested') end, '수정 요청')
     end
-    map(s.body_buf, '<C-d>', function() s.hide_body = true; if valid(s.body) then api.nvim_win_close(s.body, true); s.body = nil end end, '본문 숨김 (승인 아님)')
+    map(s.body_buf, '<C-d>', function()
+      if s.document then require('config.agent.reviews').hide(s.document) end
+      s.hide_body = true; if valid(s.body) then api.nvim_win_close(s.body, true); s.body = nil end
+      M.refresh()
+    end, '검토 문서 숨김 (승인 아님)')
     for _, b in ipairs({ s.ai_buf, s.docs_buf, s.body_buf }) do
       map(b, '?', function()
         local message = 'AI: Space 접기/펼치기 · Enter 대화 · n 새 작업 · I 외부 관리 | 문서: Enter 선택 · a 승인 · r 수정 | AgentDocuments/AgentDocument: 숨긴 영역 표시 · Alt+h/l 이동'
@@ -454,6 +478,7 @@ function M.open(focus_list)
     api.nvim_create_autocmd({ 'VimResized', 'WinResized', 'TabEnter' }, { group = group, callback = function() vim.schedule(M.refresh) end })
     s.timer = vim.uv.new_timer()
     s.timer:start(1000, 1000, vim.schedule_wrap(function()
+      if M.state ~= s then return end
       if not api.nvim_tabpage_is_valid(s.tab) then s.timer:stop(); s.timer:close(); if M.state == s then M.state = nil end; return end
       M.refresh()
     end))
@@ -520,7 +545,7 @@ function M.explore()
   local s = M.state
   if vim.o.columns < 85 then s.narrow = 'explorer'; M.layout() end
   local ok, err = pcall(function()
-    require('neo-tree.command').execute({ source = 'filesystem', action = 'focus', position = 'left', dir = s.cwd })
+    require('neo-tree.command').execute({ source = 'filesystem', action = 'focus', toggle = true, position = 'left', dir = s.cwd })
   end)
   if not ok then vim.notify('Cannot open explorer: ' .. tostring(err), vim.log.levels.WARN) end
 end

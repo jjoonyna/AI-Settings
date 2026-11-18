@@ -139,7 +139,7 @@ export function install(options) {
     }
     const status = ['model-with-reasoning', 'five-hour-limit', 'weekly-limit', 'context-used', 'current-dir', 'git-branch'];
     const codexConfig = path.join(codexHome, 'config.toml');
-    const managed = { approval_policy: '"on-request"', approvals_reviewer: '"auto_review"', model: JSON.stringify(catalog.defaults.codex), model_reasoning_effort: '"medium"', 'tui.status_line': JSON.stringify(status), 'windows.sandbox': '"unelevated"' };
+    const managed = { approval_policy: '"on-request"', approvals_reviewer: '"auto_review"', model: JSON.stringify(catalog.defaults.codex), model_reasoning_effort: '"medium"', 'tui.status_line': JSON.stringify(status), 'windows.sandbox': '"elevated"' };
     for (const role of ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback']) {
       managed[`profiles.${role}.approval_policy`] = null;
       managed[`profiles.${role}.approvals_reviewer`] = null;
