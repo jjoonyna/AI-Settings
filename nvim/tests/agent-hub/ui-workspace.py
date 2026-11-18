@@ -13,7 +13,8 @@ from pip._vendor import msgpack
 
 repo = Path(__file__).resolve().parents[3]
 with tempfile.TemporaryDirectory(prefix='ai-workspace-ui-') as folder:
-    env = dict(os.environ, XDG_CONFIG_HOME=str(repo), AGENT_HUB_HOME=folder)
+    env = dict(os.environ, XDG_CONFIG_HOME=str(repo), AGENT_HUB_HOME=folder,
+               XDG_STATE_HOME=folder, XDG_CACHE_HOME=folder, NVIM_LOG_FILE=str(Path(folder)/'nvim.log'))
     for name in ['NVIM', 'AGENT_HUB_INSTANCE', 'AGENT_HUB_REQUEST', 'AGENT_HUB_MANAGED']:
         env.pop(name, None)
     process = subprocess.Popen([shutil.which('nvim'), '--embed', '-u', 'NONE', '-i', 'NONE'],
@@ -67,7 +68,11 @@ vim.g.mapleader = ' '
 vim.o.mouse = 'a'
 dofile(vim.fn.stdpath('config') .. '/lua/config/keymaps.lua')
 W, T, R = require('config.agent.workspace'), require('config.agent.terminal'), require('config.agent.reviews')
+original_tab, original_buf = vim.api.nvim_get_current_tabpage(), vim.api.nvim_get_current_buf()
+local schedule_wrap=vim.schedule_wrap
+vim.schedule_wrap=function(fn) workspace_tick=fn; return schedule_wrap(fn) end
 W.open(false)
+vim.schedule_wrap=schedule_wrap
 local cmd = {vim.fn.exepath('node'), '-e', 'setInterval(()=>{},1000)'}
 a = assert(T.spawn({cmd=cmd, agent='Codex', role='plan', model='gpt-6.1-sol', name='계획 | A', cwd=vim.fn.getcwd()}))
 b = assert(T.spawn({cmd=cmd, agent='Codex', role='work', model='gpt-6.1-terra', name='작업 | B', cwd=vim.fn.getcwd(), env={AGENT_PARENT_ID=tostring(a)}}))
@@ -118,6 +123,12 @@ W.select(a,true)
         click('ai', 1, 6)
         wait("return vim.api.nvim_win_get_buf(W.state.chat) == T.registry[a].buf")
         assert lua("return require('config.agent.plan_preview').show({path=q,owner=a}):match('^OK') ~= nil")
+        lua("W.select_review(R.items()[2].id); vim.api.nvim_set_current_win(W.state.body)")
+        rpc('nvim_input', ['<C-d>'])
+        wait("return not W.state.body and #W.state.reviews == 1 and #R.items() == 2")
+        assert lua("return vim.fn.filereadable(q) == 1 and R.items()[2].status == 'review_pending'")
+        assert lua("return require('config.agent.plan_preview').show({path=q,owner=a}):match('^OK') ~= nil")
+        lua("W.select_review(R.items()[1].id)")
         click('docs', 3)
         time.sleep(.1)
         assert lua("return vim.api.nvim_buf_get_lines(W.state.body_buf,0,1,false)[1] == '# First'")
@@ -248,14 +259,80 @@ file=root..'/한글 file.txt'; vim.fn.writefile({'contents'},file)
 W.state.cwd=root
 vim.api.nvim_set_current_win(W.state.chat)
 """)
+        rpc('nvim_input', ['<C-\\><C-n>'])
+        wait("return vim.api.nvim_get_mode().mode:sub(1,1) == 'n'")
+        for columns in (40, 50, 190):
+            rpc('nvim_ui_try_resize', [columns, 30])
+            lua("vim.api.nvim_set_current_win(W.state.chat)")
+            rpc('nvim_input', [' ae'])
+            wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return s.winid and vim.api.nvim_win_is_valid(s.winid) and s.tree and s.bufnr and #vim.api.nvim_buf_get_lines(s.bufnr,0,-1,false)>=2")
+            assert lua("return vim.api.nvim_get_current_win() == require('neo-tree.sources.manager').get_state('filesystem').winid")
+            rpc('nvim_input', [' ae'])
+            wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return not s.winid or not vim.api.nvim_win_is_valid(s.winid)")
+            assert lua("return W.state.selected == a and vim.api.nvim_win_get_buf(W.state.chat) == T.registry[a].buf and vim.fn.jobwait({T.registry[a].chan,T.registry[b].chan},0)[1] == -1")
+            rpc('nvim_input', [' ae'])
+            wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return s.winid and vim.api.nvim_win_is_valid(s.winid)")
+            rpc('nvim_input', [' ae'])
+            wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return not s.winid or not vim.api.nvim_win_is_valid(s.winid)")
+        rpc('nvim_ui_try_resize', [40, 30])
         rpc('nvim_input', [' ae'])
-        wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return s.tree and s.bufnr and #vim.api.nvim_buf_get_lines(s.bufnr,0,-1,false)>=2")
+        wait("local s=require('neo-tree.sources.manager').get_state('filesystem'); return s.winid and vim.api.nvim_win_is_valid(s.winid)")
         lua("local s=require('neo-tree.sources.manager').get_state('filesystem'); vim.api.nvim_set_current_win(s.winid); vim.api.nvim_win_set_cursor(s.winid,{2,0})")
         rpc('nvim_input', ['<CR>'])
         wait("return W.state.body and vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(W.state.body))) == vim.fs.normalize(file)")
         assert lua("return vim.api.nvim_win_get_buf(W.state.chat)==T.registry[a].buf and vim.fn.jobwait({T.registry[a].chan,T.registry[b].chan},0)[1]==-1 and vim.fn.jobwait({T.registry[b].chan},0)[1]==-1")
         assert lua("return W.open_file(file) and vim.api.nvim_win_get_buf(W.state.body)==vim.fn.bufnr(file)")
-        print('PASS embed UI: terminal input focus, AI/document mouse selection, independent selection, hidden live job, 40/50 columns, real Neo-tree and live jobs')
+        # Exercise process exits and editor preservation with the real attached UI.
+        lua("""before_exit_reviews=R.items()
+local cmd={vim.fn.exepath('node'),'-e','setInterval(()=>{},1000)'}
+x=assert(T.spawn({role='plan',name='exit X',cmd={vim.fn.exepath('node'),'-e','setTimeout(()=>process.exit(0),2000)'}}))
+y=assert(T.spawn({role='plan',name='exit Y',cmd=cmd}))
+W.select(x,true)
+""")
+        for name in ('a', 'c'):
+            lua(f"vim.fn.jobstop(T.registry[{name}].chan)")
+            wait(f"return T.registry[{name}] == nil")
+            assert lua('return W.state.selected == x'), 'background exit preserves selection'
+        wait('return T.registry[x] == nil and W.state.selected == y')
+        lua("""assert(W.open_file(file))
+edit_buf=W.state.file_buf
+vim.api.nvim_buf_set_lines(edit_buf,0,-1,false,{'unsaved'})
+vim.api.nvim_buf_set_lines(original_buf,0,-1,false,{'original unsaved'})
+vim.fn.jobstop(T.registry[y].chan)
+""")
+        wait('return not W.active()')
+        assert lua("""return vim.api.nvim_get_current_tabpage()==original_tab and vim.bo[original_buf].modified
+and vim.bo[edit_buf].modified and vim.api.nvim_buf_get_lines(edit_buf,0,1,false)[1]=='unsaved'
+and vim.fn.readfile(file)[1]=='contents'""")
+        assert lua("""for _,id in ipairs({b,review,d}) do
+if not vim.api.nvim_buf_is_valid(T.registry[id].buf) or vim.fn.jobwait({T.registry[id].chan},0)[1]~=-1 then return false end end
+return true""")
+        lua("workspace_tick()")  # A queued callback from the closed workspace is inert.
+        lua("""W.open(false)
+z=assert(T.spawn({role='plan',name='reopen',cmd={vim.fn.exepath('node'),'-e','console.log("READY");setInterval(()=>{},1000)'}}))
+assert(W.select(z,true))""")
+        wait("return table.concat(vim.api.nvim_buf_get_lines(T.registry[z].buf,0,-1,false),' '):find('READY',1,true) ~= nil")
+        # A background workspace exit must preserve the editor tab currently in use.
+        lua("""vim.o.hidden=true
+vim.cmd('tabnew')
+other_tab=vim.api.nvim_get_current_tabpage()
+other_buf=vim.api.nvim_get_current_buf()
+vim.api.nvim_buf_set_lines(other_buf,0,-1,false,{'other unsaved'})
+vim.fn.jobstop(T.registry[z].chan)""")
+        wait('return not W.active()')
+        assert lua('return vim.api.nvim_get_current_tabpage()==other_tab and vim.bo[other_buf].modified'), 'preserves another tab focus'
+        # Original editor can be closed before the sole remaining workspace exits.
+        lua("""vim.cmd('tabclose '..vim.api.nvim_tabpage_get_number(original_tab))
+W.open(false)
+last=assert(T.spawn({role='plan',name='sole tab',cmd={vim.fn.exepath('node'),'-e','console.log("READY");setInterval(()=>{},1000)'}}))
+vim.cmd('tabclose '..vim.api.nvim_tabpage_get_number(other_tab))
+""")
+        wait("return table.concat(vim.api.nvim_buf_get_lines(T.registry[last].buf,0,-1,false),' '):find('READY',1,true) ~= nil")
+        lua("vim.fn.jobstop(T.registry[last].chan)")
+        wait('return not W.active() and #vim.api.nvim_list_tabpages()==1 and not vim.t.agent_workspace')
+        assert lua('return vim.bo.buftype=="" and vim.bo[other_buf].modified and vim.bo[edit_buf].modified'), 'fallback editor preserves files'
+        assert lua("return vim.deep_equal(R.items(),before_exit_reviews) and vim.fn.filereadable(p)==1 and vim.fn.filereadable(q)==1"), 'plan exits preserve reviews and completion contract'
+        print('PASS embed UI: terminal input focus, AI/document mouse selection, independent selection, hidden live job, 40/50/190 columns, real Neo-tree, plan exits, editor focus, unsaved files and live children')
     finally:
         try:
             process.stdin.write(msgpack.packb([2, 'nvim_command', ['qa!']], use_bin_type=True))
