@@ -18,7 +18,7 @@
 
 - 요구가 열린 신규 기능·동작 변경에는 brainstorming, 버그 원인 조사에는 systematic-debugging, 코드 작성·수정에는 ponytail full, 구조 변경에는 refactoring, 테스트가 부족한 구조 변경에는 working-effectively-with-legacy-code, 완료 판단에는 verification-before-completion을 적용한다. 승인된 spec·plan을 받은 작업 세션은 설계 승인과 brainstorming을 반복하지 않는다. 단순 질문·설명·조회에는 개발 절차 전체를 적용하지 않는다.
 - Claude는 Skill 도구로, Codex는 설치된 SKILL.md를 읽어 적용한다. Superpowers의 `superpowers:이름` 참조는 공통 배포된 같은 이름의 사용자 스킬로 해석한다. 사용자 명시 지시와 확정 계획 및 이 운영 규칙은 외부 스킬의 자동 커밋·문서 경로·위임·승인 지시보다 우선한다.
-- Codex 계획 세션도 `session.mjs handoff`로 별도 영구 작업 세션과 별도 읽기 전용 리뷰 세션을 연다. 내장 에이전트나 직접 구현으로 대체하지 않는다. 위임 실패는 보고하고 실행 경로를 복구한다. 원격 앱은 정확한 threadId와 turnId로 결과를 확인한다. 이미 역할이 확인된 작업·리뷰 세션은 역할 확인을 반복하지 않는다.
+- 계획 세션은 Claude·Codex 모두 `AgentHandoff` 또는 `session.mjs handoff`로 별도 영구 작업 세션과 별도 읽기 전용 리뷰 세션을 연다. 구현·리뷰를 Agent 도구 등 내장 에이전트나 직접 구현으로 대체하지 않으며, 외부 스킬의 서브에이전트 구현·리뷰 지시도 handoff 세션으로 대체한다. 계획 세션 안의 에이전트는 조사·설계 분석에만 쓴다. 위임 실패는 보고하고 실행 경로를 복구한다. 원격 앱은 정확한 threadId와 turnId로 결과를 확인한다. 이미 역할이 확인된 작업·리뷰 세션은 역할 확인을 반복하지 않는다.
 
 ## 코드 작성
 
