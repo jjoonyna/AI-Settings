@@ -48,7 +48,10 @@ function M.context(entry, opts)
     '자신의 진행 기록: ' .. entry.note,
     '먼저 공유 폴더의 README.md와 다른 에이전트 기록, 작업 폴더의 .agent-shared.md가 있으면 읽으세요.',
     '자기 기록에 목표·확정 결정·진행 결과·변경 파일·미해결 항목을 한국어로 갱신하세요. 다른 에이전트 기록은 덮어쓰지 마세요.',
-    '사용자 확인이 필요할 때만 docs/user-review/<주제>.md를 session.mjs preview로 등록합니다. 승인 후에도 부모의 검증·리뷰 완료 확인 전까지 문서를 유지하며 파일은 보존합니다.',
+    ((opts.agent == 'codex' or opts.agent == 'claude')
+      and '사용자 확인이 필요할 때만 계획 역할에서 docs/<주제>.md를 ai_settings_sessions MCP preview({path=검토문서})로 등록합니다. identity/role/path 거부를 CLI로 우회하지 않습니다.'
+      or '사용자 확인이 필요할 때만 docs/<주제>.md를 session.mjs preview로 등록합니다.')
+      .. ' 기존 docs/user-review/ 경로도 호환합니다. 승인 후에도 부모의 검증·리뷰 완료 확인 전까지 문서를 유지하며 파일은 보존합니다.',
     opts.plan_doc and ('설계·계획 문서: ' .. opts.plan_doc) or '',
     opts.prompt or '구체적인 작업 지시가 없으면 공유 기록을 확인하고 사용자 지시를 기다리세요.',
   }, '\n')

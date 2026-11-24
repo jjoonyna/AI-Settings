@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {isDeepStrictEqual} from 'node:util';
+import {createHash} from 'node:crypto';
 import { readRole, saveRole } from './session-role.mjs';
 
 function roleFromTitle(title) {
@@ -15,6 +17,90 @@ function confirmedRole(vendor, id, title, env, persist) {
     const legacy = roleFromTitle(title);
     return stored || (legacy ? (persist ? saveRole(vendor, id, legacy, env) : legacy) : undefined);
   } catch { return undefined; }
+}
+
+// Native MCP only: the host-added tool-use ID selects this call, never the last saved model.
+export function resolveClaudeCall(env,name,args,meta) {
+  const id=env.CLAUDE_SESSION_ID,toolId=meta?.['claudecode/toolUseId'];
+  const refuse=()=>{throw new Error('identity: current Claude call model unavailable');};
+  if(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id||'')||typeof toolId!=='string'||!toolId.length
+    ||Buffer.byteLength(toolId)>512||/[\x00-\x1f\x7f]/.test(toolId))refuse();
+  const deadline=performance.now()+2000,chunkBytes=64*1024,recordCap=16*1024*1024;
+  try {
+    const root=path.resolve(env.CLAUDE_CONFIG_DIR||path.join(os.homedir(),'.claude'),'projects');
+    if(fs.realpathSync(root)!==root)refuse();
+    const stack=[root],matches=[];let dirs=0,entries=0;
+    while(stack.length) {
+      if(++dirs>128||performance.now()>=deadline)refuse();
+      const handle=fs.opendirSync(stack.pop());
+      try {let entry;while((entry=handle.readSync())) {
+        if(++entries>4096||performance.now()>=deadline)refuse();
+        const file=path.join(handle.path,entry.name);
+        if(entry.isSymbolicLink()) {if(entry.name===id+'.jsonl')refuse();continue;}
+        if(entry.isDirectory()) {if(fs.realpathSync(file)!==file)refuse();stack.push(file);}
+        else if(entry.isFile()&&entry.name===id+'.jsonl')matches.push(file);
+      }} finally {handle.closeSync();}
+    }
+    if(matches.length!==1)refuse();
+    const file=matches[0],pause=new Int32Array(new SharedArrayBuffer(4));let previous,identity;
+    for(;;) {
+      if(performance.now()>=deadline)refuse();
+      const stat=fs.lstatSync(file);
+      if(!stat.isFile()||stat.isSymbolicLink()||fs.realpathSync(file)!==file)refuse();
+      if(identity&&(identity.dev!==stat.dev||identity.ino!==stat.ino))refuse();
+      if(previous&&stat.size<previous.size)refuse();
+      identity??={dev:stat.dev,ino:stat.ino};
+      const fd=fs.openSync(file,'r'),chunk=Buffer.alloc(chunkBytes),fullHash=createHash('sha256'),prefixHash=createHash('sha256');
+      let stable=false,position=0,parts=[],recordBytes=0,partial=false,found=0,model;
+      const checkDeadline=()=>{if(performance.now()>=deadline)refuse();};
+      function append(part) {
+        if(recordBytes+part.length>recordCap)refuse();
+        if(part.length){parts.push(Buffer.from(part));recordBytes+=part.length;}
+      }
+      function consume(atEnd=false) {
+        if(!recordBytes)return;
+        checkDeadline();
+        const text=new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(parts,recordBytes));parts=[];recordBytes=0;
+        let r;try{r=JSON.parse(text);}catch{if(atEnd){partial=true;return;}refuse();}
+        checkDeadline();
+        if(!r||typeof r!=='object'||Array.isArray(r)||(Object.hasOwn(r,'sessionId')&&r.sessionId!==id))refuse();
+        if(r.type==='assistant'&&r.sessionId===id&&Array.isArray(r.message?.content))for(const b of r.message.content) {
+          checkDeadline();
+          if(b?.type==='tool_use'&&b.id===toolId) {
+            if(++found>1)refuse();
+            model=/^(?:claude-)?(opus|sonnet|haiku|fable)(?:-|$)/.exec(r.message.model||'')?.[1];
+            if(!model||b.name!=='mcp__ai_settings_sessions__'+name||!isDeepStrictEqual(b.input,args))refuse();
+          }
+        }
+      }
+      try {
+        const opened=fs.fstatSync(fd);if(opened.dev!==stat.dev||opened.ino!==stat.ino)refuse();
+        while(position<stat.size) {
+          checkDeadline();
+          const length=fs.readSync(fd,chunk,0,Math.min(chunkBytes,stat.size-position),position);if(!length)refuse();
+          const bytes=chunk.subarray(0,length);fullHash.update(bytes);
+          if(previous&&position<previous.size)prefixHash.update(bytes.subarray(0,Math.min(length,previous.size-position)));
+          let start=0;for(let at=bytes.indexOf(10);at>=0;at=bytes.indexOf(10,start)) {
+            append(bytes.subarray(start,at));consume();start=at+1;
+          }
+          append(bytes.subarray(start));position+=length;
+        }
+        consume(true);checkDeadline();
+        const end=fs.fstatSync(fd),current=fs.lstatSync(file);
+        if(!current.isFile()||current.isSymbolicLink()||current.dev!==stat.dev||current.ino!==stat.ino
+          ||end.dev!==stat.dev||end.ino!==stat.ino||end.size<stat.size||current.size<stat.size||fs.realpathSync(file)!==file)refuse();
+        stable=end.size===stat.size&&end.mtimeMs===stat.mtimeMs&&current.size===end.size&&current.mtimeMs===end.mtimeMs;
+      } finally {fs.closeSync(fd);}
+      if(previous&&prefixHash.digest('hex')!==previous.digest)refuse();
+      previous={size:position,digest:fullHash.digest('hex')};
+      if(stable&&!partial&&found===1) {
+        const role=confirmedRole('claude',id,undefined,env,false);if(!role)refuse();checkDeadline();
+        return {id,model,role};
+      }
+      const remaining=deadline-performance.now();if(remaining<=0)refuse();
+      Atomics.wait(pause,0,0,Math.min(25,remaining));
+    }
+  } catch {refuse();}
 }
 
 // Only an exact session identity and matching transcript header can establish a model.

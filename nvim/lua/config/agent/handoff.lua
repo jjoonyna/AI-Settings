@@ -85,7 +85,9 @@ function M.build_prompt(o)
     '검증·완료 기준: ' .. (o.validation or ''), '중단 조건: 주요 구현 결정·범위 변경 또는 해결 불가 시 부모에게 보고',
     '보고 대상: ' .. (o.report_to or '부모 서버 ' .. (o.parent_server or '') .. ', 세션 ' .. tostring(o.parent_id or '')),
     o.prompt or '', '사용자 명시 지시 없이 커밋·머지·push 금지. 전체 대화 대신 필요한 문서 구간을 읽는다.',
-    '보고는 완료 범위·변경 파일·검증 명령과 결과·미해결·다음 판단을 포함한다. 보고는 `' .. policy.report_cmd() .. ' -`에 heredoc으로 본문을 넘겨 전송하고 출력의 OK를 확인한다. PowerShell에서는 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한 뒤 파이프한다.',
+    '보고 보관·관리 queue 등록과 부모 모델 수신·실행 확인은 다릅니다. unknown/응답 유실이면 본문을 자동 재전송하지 않습니다.',
+    (o.agent == 'codex' or o.agent == 'claude') and '보고는 완료 범위·변경 파일·검증 명령과 결과·미해결·다음 판단을 포함한다. Codex/Claude Neovim 관리 세션은 ai_settings_sessions MCP report({text=보고본문})를 우선 사용하고 OK를 확인한다. 신원·역할 거부를 CLI로 우회하지 않으며 결과가 불명확하면 자동 재전송하지 않는다.'
+      or ('보고는 완료 범위·변경 파일·검증 명령과 결과·미해결·다음 판단을 포함한다. 보고는 `' .. policy.report_cmd() .. ' -`에 heredoc으로 본문을 넘겨 전송하고 출력의 OK를 확인한다. PowerShell에서는 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한 뒤 파이프한다.'),
   }
   if o.session == 'review' then lines[#lines + 1] = '읽기 전용 리뷰다. 편집 도구·셸·외부 도구로 코드, 문서 또는 파일을 수정·생성·삭제하지 않는다. 재위임 금지. 실제 변경 원문과 요구사항·테스트 증거를 읽고 근거를 보고한다.'
     lines[#lines + 1] = '리뷰 명령은 작업 폴더에서 바로 실행하고 cd … &&를 붙이지 않는다. 임시 파일을 만들지 않는다. 파일을 변경하는 검증 명령은 실행하지 말고 보고에 적는다.' end
@@ -135,23 +137,39 @@ function M.receive(o)
     env = { AGENT_SESSION_ROLE = o.session, AGENT_SESSION_MODEL = model.id, AGENT_SESSION_VENDOR = o.agent, AGENT_SESSION_TITLE = title,
       AGENT_PARENT_SERVER = o.parent_server, AGENT_PARENT_ID = tostring(o.parent_id), AI_SETTINGS_HOME = policy.installation().runtime,
       IMPECCABLE_LIVE_COPY_AGENT = 'chat' } })
-  return id and ('OK id=' .. id .. ' model=' .. model.id .. ' title=' .. title) or ('FAIL: ' .. tostring(why))
+  if not id then return 'FAIL: ' .. tostring(why) end
+  local child = terminal.registry[id]
+  if not child or not require('config.agent.hub').valid_id(child.task_id) then return 'FAIL: launched child task identity unavailable; do not retry' end
+  return 'OK id=' .. id .. ' model=' .. model.id .. ' title=' .. title .. ' task_id=' .. child.task_id
 end
 function M.receive_report(o)
   if type(o) ~= 'table' or type(o.text) ~= 'string' or vim.trim(o.text) == '' then return 'FAIL: 보고 내용 없음' end
   local entry = terminal.registry[tonumber(o.parent_id)]
   if not entry then return 'FAIL: 부모 세션 없음' end
-  local hub = require('config.agent.hub')
-  local report = hub.root() .. '/reports/' .. hub.uid() .. '.json'
-  if not hub.write(report, { from = o.from, text = o.text, parent_id = o.parent_id, time = os.time() }) then return 'FAIL: 보고 저장 실패' end
-  local ok, why = terminal.send(entry.id, '[작업/리뷰 보고]\n' .. o.text, { prompt = entry.agent == 'Codex' and '›' or '❯' })
   local child = terminal.registry[tonumber(o.owner)]
+  if not child or child.exit_code ~= nil or entry.exit_code ~= nil or not child.task_id
+    or child.task_id ~= o.task_id or child.parent_id ~= entry.id then
+    return 'FAIL: 보고 자식·부모·작업 관계 불일치'
+  end
+  local hub = require('config.agent.hub')
+  local message_id=vim.fn.sha256(tostring(hub.id)..'\n'..tostring(child.id)..'\n'..child.task_id..'\n'..tostring(child.cli_session)..'\n'..tostring(entry.id)..'\n'..tostring(entry.cli_session)..'\n'..o.text)
+  local report = hub.root() .. '/reports/' .. message_id .. '.json'
+  if vim.uv.fs_stat(report) then
+    local prior=hub.read(report)
+    if not prior or prior.owner~=child.id or prior.parent_id~=entry.id or prior.task_id~=child.task_id or prior.text~=o.text then return 'FAIL: report record conflict; not resent' end
+    return 'OK report='..report..' duplicate=true; not resent'
+  end
+  if not hub.write(report, { from = o.from, text = o.text, owner = child.id, task_id = child.task_id, parent_id = o.parent_id, time = os.time() }) then return 'FAIL: 보고 저장 실패' end
+  child.latest_report=o.text
+  local ok, why, receipt = terminal.send(entry.id, '[작업/리뷰 보고]\n' .. o.text, {request_id=message_id,sender={owner=child.id,task_id=child.task_id,cli_session=child.cli_session}})
+  child.report_delivery={state=ok and 'management-queue' or 'failed',message_id=receipt and receipt.id,error=why}
   if ok and child and child.parent_id == entry.id and child.task_id == o.task_id then
+    child.latest_report = o.text
     child.status = 'review_pending'
     hub.publish()
     require('config.agent.workspace').refresh()
   end
-  return ok and ('OK report=' .. report) or ('FAIL: ' .. tostring(why))
+  return ok and ('OK report=' .. report .. ' delivery=management-queue; execution unproven') or ('FAIL: report saved='..report..'; delivery=' .. tostring(why)..'; do not resend automatically')
 end
 function M.report(o)
   if not o or not o.parent_server then return 'FAIL: parent_server가 필요합니다' end

@@ -71,15 +71,17 @@ function M.decide(id, decision, text)
       local T = require('config.agent.terminal')
       local entry = T.registry[item.owner]
       if not entry or entry.task_id ~= item.task_id then return 'FAIL: 소유 세션을 찾을 수 없습니다' end
-      local ok, err = T.send(item.owner, '[사용자 검토 ' .. decision .. ']\n작업: ' .. item.task_id .. '\n문서: ' .. item.path .. '\n' .. (text or ''),
-        { prompt = entry.agent == 'Codex' and '›' or '❯' })
-      if not ok then return 'FAIL: ' .. tostring(err) end
+      if item.status==decision and item.delivery then return 'OK: 결정은 이미 저장됐습니다. 자동 재전송하지 않습니다' end
       item.status = decision
+      item.delivery={state='not_attempted'}
+      save(data)
+      local ok, err, receipt = T.send(item.owner, '[사용자 검토 ' .. decision .. ']\n작업: ' .. item.task_id .. '\n문서: ' .. item.path .. '\n' .. (text or ''),{request_id=hub.uid()})
+      item.delivery={state=ok and 'management-queue' or 'failed',message_id=receipt and receipt.id,error=err}
       save(data)
       entry.status = decision == 'approved' and 'unknown' or 'response_requested'
       hub.publish()
       require('config.agent.workspace').refresh()
-      return 'OK: ' .. decision
+      return 'OK: ' .. decision .. ' saved; delivery=' .. item.delivery.state .. (err and ('; '..err) or '')
     end
   end
   return 'FAIL: 검토 요청 없음'

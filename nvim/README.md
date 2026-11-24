@@ -2,6 +2,8 @@
 
 Catppuccin Mocha 테마와 여러 에이전트를 관리하는 공통 작업 목록을 사용한다.
 
+초기/후속 지시·보고·검토 응답은 Codex 0.172.0 UUID queue API 또는 Claude 2.1.331 own session inbox로 전달한다. 사용자 입력·커서를 읽어 제출 여부를 추정하지 않으며 관리 본문/자동 Enter를 PTY에 보내지 않는다. 새 시작·선택/최근 재개는 정확한 역할·모델·UUID를 확인한다. 크기·TTL·중복·포화·신원 변경을 검사하며 응답 유실은 unknown으로 보존하고 자동 재전송하지 않는다. queue 접수나 수신함 쓰기는 모델 실행·부모 확인이 아니다. Codex 이름은 metadata API로 바꾸고 AI TUI 자동 종료는 미지원으로 보존한다. TUI 정상 종료 후 전용 hidden ConPTY 서버 채널에만 정상 interrupt를 한 번 보내며 강제 종료하지 않는다. 종료는 정확한 wrapper/native child PID·exit0·signal 부재로 확인하며 보호된 socket의 파일 삭제 여부는 미확인이다. stat false는 연결 불가나 삭제 증거가 아니다. exFAT의 OS 쓰기 차단 한계와 기존 역할·MCP 경계는 별개다.
+
 ## 입력과 창 이동
 
 | 키 | 동작 |
@@ -73,13 +75,17 @@ Markdown의 영어 맞춤법 표시와 markdownlint 형식 검사는 끈다. Mar
 
 ## 사용자 검토 문서
 
-`docs/user-review/*.md`의 명시적 preview 요청만 등록한다. 파일 생성·열기·저장·창 닫기는 승인이나 완료가 아니다. CLI `session.mjs preview <문서>`는 현재 owner·task_id를 전달하며 `{path, owner, task_id}` JSON 파일도 받는다. 기존 Lua path 호출은 소유자가 하나일 때 호환된다. 소유자·작업이 모호하거나 불일치하면 거부한다.
+프로젝트의 `docs/*.md`와 기존 `docs/user-review/*.md`에 대한 명시적 preview 요청만 등록한다. 일반 문서 열기는 검토 등록이 아니며 파일 생성·열기·저장·창 닫기는 승인이나 완료가 아니다. CLI `session.mjs preview <문서>`는 현재 owner·task_id를 전달하며 `{path, owner, task_id}` JSON 파일도 받는다. 기존 Lua path 호출은 소유자가 하나일 때 호환된다. 소유자·작업이 모호하거나 불일치하면 거부한다.
 
 - 통합 화면의 본문은 읽기 전용이며 a는 승인·진행, r은 수정 요청을 해당 AI에 전달한다. 승인 후에도 목록을 유지하고 개정되면 재검토한다.
 - 창보다 넓은 표는 표시만 셀 줄바꿈 격자로 바꾼다(원본 파일 불변). 격자 셀 안 백틱·`**`·`__`는 제거하며 열 최소 폭을 확보할 수 없으면 원문을 유지한다.
 - Ctrl+D는 현재 검토 문서의 본문과 목록 항목을 숨긴다. 파일·승인 상태와 작업은 보존하며 내용 개정 또는 재검토 등록 시 다시 표시한다.
 - 부모가 검증·별도 리뷰를 확인한 뒤 `AgentTaskComplete({owner=자식번호, task_id='정확한 ID', parent_id=부모번호, verified=true, reviewed=true})` 또는 같은 JSON의 `session.mjs task-complete`를 호출한다. 미승인·개정·수정 요청 문서는 거부한다. 해당 소유자/작업 문서만 목록에서 제거하고 원본은 보존한다.
 - 기존 standalone은 별도 읽기 전용 검토 창과 Ctrl+D 닫기를 유지한다. 앱 원격 preview는 본문을 stdout에 표시한다.
+
+세션 명령은 서버의 인스턴스·소유자·작업을 확인하고 실행 직전에 다시 검사한다. 다른 인스턴스로 복구할 때는 동일한 CLI UUID가 필요하다. 구버전 서버는 업데이트 후 재시작하고, EPERM/EACCES 접근 거부는 권한 원인을 해결한다. 전송 후 응답 손실은 실행 여부 불명으로 처리하며 자동 재전송하지 않는다.
+
+Codex·Claude 관리 세션은 설치된 `ai_settings_sessions` MCP의 `connection_status`, `handoff`, `preview`, `report`, `session_status`, `task_complete`를 우선 사용한다. Codex 관리 새 시작·재개는 세션별 private native 서버의 동일 UUID/API와 명시적인 `--remote` endpoint를 사용하고 해당 세션의 NVIM·instance·owner·task 환경을 전달한다. CLI ID가 누락되면 정확한 live binding으로 보완한다. 역할·모델·프로젝트 경로·직접 자식 관계를 실행 직전에 다시 검사한다. 호스트 도구는 제한된 세션 관리만 실행하며 파일 쓰기 권한을 넓히지 않는다. 도구 초기화는 관리 환경 없이 가능하지만 호출은 거부한다. 설치 후 새 Codex에서 발견·호출을 확인해야 하며, MCP 미등록·초기화·identity 실패와 샌드박스 CLI의 EPERM을 구분한다. 명시적으로 지원되지 않는 CLI·앱만 기존 CLI를 사용한다.
 
 ## CLI 상태
 
@@ -104,7 +110,7 @@ AgentHubNew({
   prompt = '수행할 작업과 범위',
 })
 AgentHubStatus()
-AgentPlanPreview({path='프로젝트/docs/user-review/주제.md', owner=세션번호, task_id='정확한 작업 ID'})
+AgentPlanPreview({path='프로젝트/docs/주제.md', owner=세션번호, task_id='정확한 작업 ID'})
 ```
 
 AgentHubNew는 시작 요청 식별자를 반환한다. 실제 시작 실패는 알림과 requests/<식별자>.json.result에서 확인한다. 같은 request_id를 재사용하면 중복으로 실행하지 않는다. 새 창 생성 자체는 worktree를 만들지 않는다.

@@ -2,12 +2,42 @@
 local M = {}
 function M.show(request)
   local o = type(request) == 'table' and vim.deepcopy(request) or { path = request }
+  if type(o.path) ~= 'string' then return 'FAIL: 검토 문서 경로가 필요합니다' end
   local path = vim.fn.fnamemodify(o.path or '', ':p')
   local normalized = path:gsub('\\', '/'):lower()
-  if not normalized:match('/docs/user%-review/[^/]+%.md$') or vim.fn.filereadable(path) ~= 1 then
-    return 'FAIL: docs/user-review/ 안의 기존 Markdown 검토 문서가 필요합니다'
+  local workspace = require('config.agent.workspace').active()
+  local root = vim.fn.getcwd()
+  if workspace then
+    local T = require('config.agent.terminal')
+    local supplied = o.owner ~= nil and o.owner or o.session
+    if o.owner == false then return 'FAIL: 정확한 owner와 task_id가 필요합니다' end
+    if supplied ~= nil and type(supplied) ~= 'number' and type(supplied) ~= 'string' then
+      return 'FAIL: 정확한 owner와 task_id가 필요합니다'
+    end
+    local owner = tonumber(supplied)
+    if not owner and not o.owner and not o.session then
+      local entries = T.entries()
+      if #entries == 1 then owner = entries[1].id end
+    end
+    local entry = owner and T.registry[owner]
+    if not entry or not entry.task_id or (o.task_id and o.task_id ~= entry.task_id) then
+      return 'FAIL: 정확한 owner와 task_id가 필요합니다'
+    end
+    root = entry.cwd
   end
-  if require('config.agent.workspace').active() then
+  local function real(p)
+    local value = p and vim.uv.fs_realpath(p)
+    return value and value:gsub('\\', '/'):lower():gsub('/+$', '')
+  end
+  local base, docs, target = real(root), real(root and (root .. '/docs')), real(path)
+  local relative = docs and normalized:sub(#docs + 2)
+  if not base or docs ~= base .. '/docs' or not target or target ~= normalized:gsub('/+$', '')
+    or normalized:sub(1, #docs + 1) ~= docs .. '/'
+    or not (relative:match('^[^/]+%.md$') or relative:match('^user%-review/[^/]+%.md$'))
+    or vim.fn.filereadable(path) ~= 1 then
+    return 'FAIL: 프로젝트 docs의 기존 Markdown 검토 문서가 필요합니다'
+  end
+  if workspace then
     o.path = path
     local ok, result = pcall(require('config.agent.reviews').register, o)
     return ok and result or 'FAIL: ' .. tostring(result)

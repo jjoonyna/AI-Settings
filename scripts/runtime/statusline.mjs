@@ -3,6 +3,30 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import {messageRpc,childEnvironment} from './session-message-rpc.mjs';
+
+// Optional normal native statusline signal; never a public tool/model authorization fallback.
+export async function attestStatusModel(data,env=process.env,rpcFactory=messageRpc) {
+  let rpc,timer;
+  try {
+    const file=env.AI_SETTINGS_CLAUDE_LAUNCH;if(!file)return;
+    if(!path.isAbsolute(file)||path.basename(file)!=='launch.message.json'||fs.realpathSync(file)!==path.resolve(file)
+      ||fs.lstatSync(file).isSymbolicLink()||fs.statSync(file).size>16384)return;
+    const directory=path.dirname(file),hub=fs.realpathSync(env.AGENT_HUB_HOME);
+    if(path.dirname(directory)!==path.join(hub,'transports')||!/^message-[A-Za-z0-9]{6}$/.test(path.basename(directory)))return;
+    const m=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(m.kind!=='ai-settings-message-launch'||m.vendor!=='claude'||env.AGENT_SESSION_VENDOR!=='claude'||!env.NVIM||!env.AGENT_EVENT_TOKEN
+      ||m.instance!==env.AGENT_EVENT_INSTANCE||String(m.owner)!==env.AGENT_SESSION_ID||m.task_id!==env.AGENT_TASK_ID
+      ||!['plan','work','review'].includes(m.role)||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(m.cli_session||'')
+      ||data.session_id!==m.cli_session||fs.realpathSync(data.workspace?.current_dir||data.cwd)!==fs.realpathSync(m.cwd)
+      ||typeof data.model?.id!=='string'||!data.model.id.length||data.model.id.length>512)return;
+    for(const key of ['CLAUDE_CODE_SESSION_ID','CLAUDE_SESSION_ID'])if(env[key]!==undefined&&env[key]!==m.cli_session)return;
+    const model=/^(?:claude-)?(opus|sonnet|haiku|fable)(?:-|$)/.exec(data.model.id)?.[1]||'unsupported';
+    rpc=rpcFactory(childEnvironment(env));
+    await Promise.race([rpc.request({operation:'model-attest',identity:{instance:m.instance,owner:m.owner,task_id:m.task_id,vendor:'claude',cli_session:m.cli_session,token:env.AGENT_EVENT_TOKEN},role:m.role,model}),
+      new Promise(resolve=>{timer=setTimeout(resolve,250);})]);
+  }catch{}finally{clearTimeout(timer);try{rpc?.close();}catch{}}
+}
 
 export function usageSnapshot(data, now = Date.now()) {
   const windows = {};
@@ -80,5 +104,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const cwd = data.workspace?.current_dir || data.cwd || os.homedir();
     const branch = spawnSync('git', ['--no-optional-locks', '-C', cwd, 'branch', '--show-current'], { encoding: 'utf8', windowsHide: true, timeout: 1000 });
     console.log(path.basename(cwd) + (branch.status === 0 && branch.stdout.trim() ? ' | ' + branch.stdout.trim() : ''));
+    await attestStatusModel(data);
   } catch { console.log(formatStatus({}, { windows: {} })); }
 }

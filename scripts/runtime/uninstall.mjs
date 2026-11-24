@@ -4,6 +4,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { mergeToml, tomlValues, unmergeHookConfig } from './config-merge.mjs';
+import { safeTerminal, readTerminal, uninstallTerminal, replaceTerminal } from './terminal-config.mjs';
 const read = p => fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '');
 const hash = b => crypto.createHash('sha256').update(b).digest('hex');
 const within = (root, target) => { const rel = path.relative(path.resolve(root), path.resolve(target)); return !rel.startsWith('..') && !path.isAbsolute(rel); };
@@ -22,6 +23,21 @@ export function uninstall(home = os.homedir()) {
       if (fs.existsSync(cursor) && fs.lstatSync(cursor).isSymbolicLink()) throw new Error('Linked parent changed after installation: ' + cursor);
       const next = path.dirname(cursor); if (next === cursor) break; cursor = next;
     }
+  }
+  if (manifest.terminal) {
+    try {
+      const target = manifest.terminal.path;
+      safeTerminal(target, home);
+      if (fs.existsSync(target)) {
+        const before = readTerminal(target);
+        const after = uninstallTerminal(before, manifest.terminal.metadata);
+        if (after !== before) {
+          const outcome = replaceTerminal(target, home, before, after);
+          if (outcome.warning) throw new Error(outcome.warning);
+        }
+        report.push('Terminal key: restored unchanged managed entries; preserved user changes: ' + target);
+      } else throw new Error('settings file not found');
+    } catch (error) { throw new Error('Terminal restoration requires attention: ' + error.message + '; inspect recovery material before retrying uninstall'); }
   }
   for (const [target, expected] of Object.entries(manifest.files)) {
     if (!fs.existsSync(target)) continue;

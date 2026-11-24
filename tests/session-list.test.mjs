@@ -69,3 +69,19 @@ test('listing scans each directory only once regardless of session count', () =>
     assert.equal(reads, 2);
   } finally { fs.readdirSync = original; fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('newer native Guardian/subagent is excluded from selectable/latest while CLI/app unknown user stays confirmable',()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'session-internal-'));try{
+  const cwd=path.join(root,'project'),dir=path.join(root,'sessions');fs.mkdirSync(dir,{recursive:true});
+  const plan='11111111-1111-4111-8111-111111111111',guardian='22222222-2222-4222-8222-222222222222',unknown='33333333-3333-4333-8333-333333333333';
+  const write=(id,source,model,time)=>{const file=path.join(dir,'rollout-'+id+'.jsonl');fs.writeFileSync(file,[{type:'session_meta',payload:{id,cwd,source}},{type:'turn_context',payload:{model}}].map(JSON.stringify).join('\n'));fs.utimesSync(file,time,time);};
+  write(plan,'cli','gpt-6.1-sol',20);write(unknown,'vscode','user-experimental-model',10);write(guardian,{subagent:{other:'guardian'}},'codex-auto-review',30);
+  fs.writeFileSync(path.join(root,'session_index.jsonl'),JSON.stringify({id:plan,thread_name:'계획 | user'}));
+  const env={CODEX_HOME:root,AI_SETTINGS_HOME:root};const rows=listSessions('codex',cwd,env);
+  assert.deepEqual(rows.map(r=>r.id),[plan,unknown]);assert.equal(rows[0].role,'plan');assert.equal(rows[1].role,undefined);assert.equal(rows[1].model,'user-experimental-model');
+  write(guardian,{subagent:{thread_spawn:{parent_thread_id:plan}}},'gpt-6.1-sol',40);assert.deepEqual(listSessions('codex',cwd,env).map(r=>r.id),[plan,unknown]);
+  // Internal rows still participate in duplicate identity refusal, even if another cwd.
+  fs.mkdirSync(path.join(dir,'duplicate'));fs.writeFileSync(path.join(dir,'duplicate','rollout-'+plan+'.jsonl'),JSON.stringify({type:'session_meta',payload:{id:plan,cwd:root,source:{subagent:{other:'guardian'}}}}));
+  assert.deepEqual(listSessions('codex',cwd,env).map(r=>r.id),[unknown]);
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

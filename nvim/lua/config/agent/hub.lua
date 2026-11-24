@@ -77,6 +77,7 @@ function M.snapshot()
     local name, selecting = terminal.display_name(e)
     entries[#entries + 1] = { id = e.id, name = name, selecting = selecting, agent = e.agent or '에이전트', cwd = e.cwd,
       branch = e.branch, task_id = e.task_id, note = e.note, buf = e.buf, role = e.role, model = e.model, parent_id = e.parent_id,
+      cli_session = e.cli_session,
       status = e.status or 'unknown', activity_status = e.activity_status, status_source = e.status_source, exit_code = e.exit_code }
   end
   return { version = 1, instance = M.id, pid = vim.fn.getpid(), server = vim.v.servername,
@@ -93,12 +94,23 @@ function M.publish()
   end
 end
 
+function M.valid_instance(item, now, kill)
+  now, kill = now or os.time(), kill or uv.kill
+  if type(item) ~= 'table' or item.version ~= 1 or not M.valid_id(item.instance)
+    or type(item.server) ~= 'string' or item.server == '' or type(item.entries) ~= 'table'
+    or type(item.updated) ~= 'number' or item.updated ~= item.updated
+    or now - item.updated > 30 or item.updated - now > 10
+    or type(item.pid) ~= 'number' or item.pid <= 0 or item.pid % 1 ~= 0 then return false end
+  local ok, result, reason = pcall(kill, item.pid, 0)
+  if not ok then return false end
+  return result ~= nil and result ~= false or tostring(reason):match('EPERM') ~= nil or tostring(reason):match('EACCES') ~= nil
+end
+
 function M.instances()
   local result = {}
   for _, path in ipairs(vim.fn.glob(M.root() .. '/instances/*.json', false, true)) do
     local item = M.read(path)
-    if item and item.version == 1 and M.valid_id(item.instance) and type(item.server) == 'string'
-      and type(item.entries) == 'table' then
+    if M.valid_instance(item) then
       result[#result + 1] = item
     end
   end
@@ -171,6 +183,7 @@ function M.setup()
   for _, entry in ipairs(T.entries()) do if not entry.note then M.note(entry) end end
   require('config.agent.plan_preview').setup()
   require('config.agent.activity').setup()
+  require('config.agent.connection').setup()
   local group = vim.api.nvim_create_augroup('agent_hub_registry', { clear = true })
   vim.api.nvim_create_autocmd('BufEnter', { group = group, callback = function()
     local title = T.name_of(vim.api.nvim_get_current_buf())

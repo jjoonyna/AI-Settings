@@ -230,8 +230,8 @@ function M.open()
         vim.notify("브리핑만 만들었습니다: " .. path)
         return
       end
-      terminal.send(entries[ti].id, build_prompt(path, d))
-      vim.notify(entries[ti].name .. " 에 2단계를 요청했습니다")
+      local ok,why=terminal.send(entries[ti].id, build_prompt(path, d))
+      vim.notify(ok and (entries[ti].name .. ' 관리 queue에 2단계를 등록했습니다 (실행 미확인)') or tostring(why),ok and vim.log.levels.INFO or vim.log.levels.ERROR)
     end)
   end)
 end

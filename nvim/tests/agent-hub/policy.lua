@@ -27,11 +27,14 @@ assert(not rc:find('\\', 1, true) and rc:find('/bin/session.mjs report', 1, true
 assert(require('config.agent.handoff').build_prompt({ session = 'work' }):find(rc .. ' -', 1, true))
 assert(require('config.agent.handoff').build_prompt({ session = 'review' }):find('임시 파일을 만들지 않는다', 1, true))
 assert(not require('config.agent.handoff').build_prompt({ session = 'work' }):find('임시 파일을 만들지 않는다', 1, true))
+assert(require('config.agent.handoff').build_prompt({agent='codex',session='work'}):find('ai_settings_sessions',1,true))
 local bad = { agent = 'codex', session = 'review', model = 'gpt-6-luna', name = 'n', goal = 'g', scope = 's', validation = 'v', prompt = 'p', spec_doc = 'a', plan_doc = 'b', verify_cmds = 'x' }
 assert(require('config.agent.handoff').receive(bad):find('verify_cmds', 1, true))
 assert(P.command('codex', 'review', 'gpt-6.1-terra')[3] == 'review')
 local preview = require('config.agent.plan_preview')
 assert(preview.show('docs/specs/nonexistent.md'):find('FAIL:', 1, true))
+local context = require('config.agent.launcher').context({name='n', cwd='project', task_id='task', note='note'}, {})
+assert(context:find('docs/<주제>.md', 1, true), 'new review path in launch instructions')
 local handoff = require('config.agent.handoff')
 assert(handoff.receive({ agent = 'codex', session = 'work', model = 'gpt-6-luna' }):find('FAIL:', 1, true))
 local dir = vim.fn.tempname()
@@ -49,7 +52,7 @@ P.installation = function() return { mode = 'both', runtime = root, models = vim
 local cli_id = '12345678-1234-1234-1234-123456789abc'
 vim.system({ 'node', root .. '/bin/session-role.mjs', 'save', 'codex', cli_id, 'plan' }, { env = { AI_SETTINGS_HOME = root } }):wait()
 T.registry[88888] = { id = 88888, role = 'plan', model = 'gpt-6.1-sol', agent = 'Codex', cli_session = cli_id }
-T.spawn = function(opts) captured = opts; return 99999 end
+T.spawn = function(opts) captured = opts; T.registry[99999] = {task_id='policy-created-task'}; return 99999 end
 if vim.v.servername == '' then vim.fn.serverstart() end
 local request = { agent = 'codex', session = 'work', model = 'gpt-6-luna', parent_model = 'gpt-6.1-sol', parent_id = 88888,
   name = '테스트 · API', goal = '목표', scope = 'API', validation = '테스트 통과', prompt = '확정 계획 구현',
@@ -61,16 +64,27 @@ assert(captured.env.AGENT_PARENT_ID == '88888')
 assert(captured.briefing:find('검증·완료 기준: 테스트 통과', 1, true))
 request.parent_model = 'gpt-6-astra'
 assert(handoff.receive(request):find('FAIL:', 1, true))
-T.spawn = spawn; T.registry[88888] = nil; P.installation = prior_installation
+T.spawn = spawn; T.registry[88888] = nil; T.registry[99999] = nil; P.installation = prior_installation
 vim.fn.delete(dir, 'rf')
 local received
 local send = T.send
-T.registry[123456] = { id = 123456, agent = 'Codex' }
-T.send = function(id, text) received = { id, text }; return true end
+T.registry[123456] = { id = 123456, agent = 'Codex', task_id = 'parent-task' }
+T.registry[123457] = { id = 123457, parent_id = 123456, task_id = 'child-task' }
+local sent, stored = 0, 0
+T.send = function(id, text) sent = sent + 1; received = { id, text }; return true end
 local hub = require('config.agent.hub')
 local write = hub.write
-hub.write = function() return true end
-assert(handoff.receive_report({ parent_id = 123456, text = '검증 완료' }):find('OK', 1, true))
+hub.write = function() stored = stored + 1; return true end
+for _, request in ipairs({
+  { parent_id = 123456, owner = 999999, task_id = 'child-task', text = 'report' },
+  { parent_id = 123456, owner = 123457, task_id = 'wrong', text = 'report' },
+  { parent_id = 123457, owner = 123457, task_id = 'child-task', text = 'report' },
+}) do
+  assert(handoff.receive_report(request):find('FAIL:', 1, true))
+end
+assert(stored == 0 and sent == 0)
+assert(handoff.receive_report({ parent_id = 123456, owner = 123457, task_id = 'child-task', text = '검증 완료' }):find('OK', 1, true))
 assert(received[1] == 123456 and received[2]:find('검증 완료', 1, true))
-T.registry[123456] = nil; T.send = send; hub.write = write
+assert(stored == 1 and sent == 1)
+T.registry[123456] = nil; T.registry[123457] = nil; T.send = send; hub.write = write
 print('통과: 모델 상한·벤더·80% 조건·하위 리뷰·읽기 전용 도구·인계 검증·부모 보고')

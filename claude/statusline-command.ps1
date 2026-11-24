@@ -1,4 +1,8 @@
 ﻿# Claude sends structured status data on stdin. No credentials or extra API calls.
+$utf8 = [System.Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $utf8
+$OutputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
 $raw = [Console]::In.ReadToEnd()
 $runtimeRoot = if ($env:AI_SETTINGS_HOME) { $env:AI_SETTINGS_HOME } else { Join-Path (Split-Path $PSScriptRoot -Parent) '.ai-settings' }
 $scriptPath = Join-Path $runtimeRoot 'bin/statusline.mjs'

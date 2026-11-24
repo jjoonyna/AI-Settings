@@ -1,5 +1,7 @@
 # AI-Settings 공통 운영 규칙
 
+- Neovim 관리 본문은 Codex UUID queue API 또는 Claude 공식 own session inbox로 전달한다. PTY 본문·자동 Enter·화면 기반 제출 추정과 unknown 자동 재전송은 금지한다. 접수·실행·부모 확인을 구분하고 정확한 역할·모델·UUID·직접 자식 관계를 유지한다. Claude own inbox 인증값은 해당 정상 hook 자식 메모리와 자기 pipe 인증에만 사용하며 파일·부모·registry·argv·로그에 전달하지 않는다. 조직 Channels 제한을 우회하지 않는다. AI TUI 자동 종료 미지원은 명시 실패하고 보존하며, TUI 종료 후 해당 Codex 소유 서버만 정상 종료한다. exFAT에서는 역할 설정을 OS 쓰기 격리 보장으로 표현하지 않고 기존 파일 수정 금지 운영 규칙과 MCP 신원·경로 경계를 유지한다.
+
 이 배포가 관리하는 모델 배정·세션·문서·Git 운영은 이 규칙을 우선 적용한다. 관련 없는 로컬 설정·인증은 보존한다. 사용자의 현재 명시적 지시와 도구의 상위 권한 제한을 따른다.
 
 ## 계획·실행·검수
@@ -15,6 +17,8 @@
 - 작업·리뷰 보고는 완료 범위, 변경 파일, 검증 명령·결과, 미해결 문제, 다음 판단을 담는다. 보고한 뒤 계획 세션의 수신 확인 전에는 세션을 종료하지 않는다. 계획 세션은 실제 코드와 검증 근거를 확인한다.
 
 ## 공통 스킬 선택
+
+- Codex/Neovim 관리 세션에서는 설치가 자동 등록한 `ai_settings_sessions` MCP의 `connection_status`, `handoff`, `preview`, `report`, `session_status`, `task_complete`를 우선 사용한다. 현재 세션의 실제 신원·역할·모델을 검증하며 계획만 위임·검토 표시·자식 완료 확인을 수행한다. work/review는 자기 상태 조회와 실제 부모 보고만 수행한다. 이 도구는 호스트에서 제한된 세션 관리만 실행하며 파일 쓰기 권한을 확대하지 않는다. 문서는 현재 프로젝트 docs 안의 실제 Markdown으로 제한한다. 도구가 명시적으로 지원되지 않는 CLI·앱·Claude 경로에만 기존 `session.mjs`를 사용하며, 도구의 identity/role/path 거부를 CLI로 우회하지 않는다. 결과가 불명확한 변경 요청은 자동 재전송하지 않는다.
 
 - 요구가 열린 신규 기능·동작 변경에는 brainstorming, 버그 원인 조사에는 systematic-debugging, 코드 작성·수정에는 ponytail full, 구조 변경에는 refactoring, 테스트가 부족한 구조 변경에는 working-effectively-with-legacy-code, 완료 판단에는 verification-before-completion을 적용한다. 승인된 spec·plan을 받은 작업 세션은 설계 승인과 brainstorming을 반복하지 않는다. 단순 질문·설명·조회에는 개발 절차 전체를 적용하지 않는다.
 - Claude는 Skill 도구로, Codex는 설치된 SKILL.md를 읽어 적용한다. Superpowers의 `superpowers:이름` 참조는 공통 배포된 같은 이름의 사용자 스킬로 해석한다. 사용자 명시 지시와 확정 계획 및 이 운영 규칙은 외부 스킬의 자동 커밋·문서 경로·위임·승인 지시보다 우선한다.
@@ -45,10 +49,11 @@
 
 ## 문서와 사용자 확인
 
-- 내부 문서는 프로젝트 루트 `docs/`에 모으고 `/docs/` 전체를 Git에서 제외한다. `docs/specs/`, `docs/plans/`, `docs/user-review/`, `docs/refactoring/`, `docs/impact.md`, 코드·규칙 문서와 인계 기록을 유지한다. 프로젝트에 생성한 루트 AGENTS.md·CLAUDE.md도 Git 제외다. 기존 팀 추적 파일의 해제는 사용자 지시 없이 하지 않는다.
+- 내부 문서는 프로젝트 루트 `docs/`에 모으고 `/docs/` 전체를 Git에서 제외한다. spec은 `docs/superpowers/specs/`, plan은 `docs/superpowers/plans/`, 검토안은 `docs/<주제>.md`, 작업별 임시는 `docs/tmp/<작업>/`, 공유 자료는 `docs/shared/<작업>/`에 둔다. 필요한 코드·규칙·영향 문서는 docs 루트에 유지한다. 기존 `docs/user-review/` 검토안은 호환하며 임의 이동하지 않는다. 기존 `.agent-shared.md`는 호환해 읽되 새 공유 파일은 작업별 폴더에 둔다. 프로젝트에 생성한 루트 AGENTS.md·CLAUDE.md도 Git 제외다. 기존 팀 추적 파일의 해제는 사용자 지시 없이 하지 않는다.
 - 첫 내부 문서 생성 전에 루트 `.gitignore`의 `/docs/`, `/AGENTS.md`, `/CLAUDE.md` 제외를 확인하고 누락된 항목을 추가한다. 기존 파일 전체를 덮어쓰지 않는다.
 - 루트 README.md·CHANGELOG.md는 공유 문서로 추적한다. 내부 문서를 임의로 밖에 옮겨 공개하지 않는다. 기존 구조·규칙 문서를 갱신하며 중복·추정 규칙을 만들지 않는다. 문서 갱신도 리뷰 범위다.
-- 사용자 검토 문서는 `docs/user-review/<사용자가 요청한 주제>.md`, 한국어다. 상단에는 현재 상태(spec·plan·구현·문서 위치와 진척·검증·리뷰·중단 지점·다음 작업·갱신 시각)와 사용자 확인 대기, 본문은 목표·범위·주요 선택과 이유·영향·위험·완료 기준만 간결하게 쓴다.
+- 사용자 검토 문서는 `docs/<사용자가 요청한 주제>.md`, 한국어다. 상단에는 현재 상태(spec·plan·구현·문서 위치와 진척·검증·리뷰·중단 지점·다음 작업·갱신 시각)와 사용자 확인 대기, 본문은 목표·범위·주요 선택과 이유·영향·위험·완료 기준만 간결하게 쓴다. 영구 문서를 일반 열기만으로 검토안에 등록하지 않는다.
+- 결정용 임시는 사용이 끝나면 정리하고, spec·plan·공유 파일은 요구 충족과 검증·별도 리뷰·부모 확인으로 전체 완료가 확정된 뒤 해당 작업의 정확한 파일만 정리한다. 삭제 전 소유·경계와 내용을 확인하고 결과·검증·제한을 보존 문서에 반영하며 참조를 갱신한다. 불명확한 자료와 사용자 원본·최종 산출물은 보존한다. 승인·창 닫기·CLI 종료만으로 완료를 추정하지 않는다.
 - 문서는 최신 내용으로 수정하며 이력·질문답변·장황한 해설을 누적하지 않는다. 추가 설명은 세션 대화에서 한다.
 - spec과 plan 초안 완성 시 Neovim에서는 `AgentPlanPreview`로 사용자 검토 문서를 표시한다. 통합 작업 공간은 왼쪽부터 AI 목록·대화·문서 본문·문서 목록이며 문서가 없으면 앞의 두 영역만 표시한다. 앱 원격은 preview 본문과 문서 링크, 기존 standalone은 별도 읽기 전용 창을 유지한다. 표시나 창 닫기는 승인이 아니다.
 - 검토 요청은 정확한 소유 세션·작업에 연결한다. 승인·수정 요청은 명시적으로 소유 AI에 전달하며 문서 개정은 다시 검토 대기로 만든다. 승인 후에도 문서는 유지한다. 부모가 검증·별도 리뷰를 확인하고 정확한 owner·task_id·parent_id와 verified/reviewed를 전달한 `AgentTaskComplete` 또는 `session.mjs task-complete`만 관련 문서를 목록에서 제거하며 파일은 보존한다. CLI 턴/프로세스 종료·보고 도착만으로 완료를 추측하지 않는다.

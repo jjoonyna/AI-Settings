@@ -65,29 +65,34 @@ function M.spawn(opts)
     vim.cmd((opts.split or "vsplit") .. " | enew")
   end
 
-  local env = vim.tbl_extend('force', {}, opts.env or {})
-  if opts.resume then
-    env = vim.fn.environ()
-    env.NVIM = nil -- Let jobstart set the current server address, as for a new session.
-    for key in pairs(env) do
-      if key:match('^AGENT_SESSION_') or key:match('^AGENT_PARENT_')
-        or key == 'CLAUDE_SESSION_ID' or key == 'CODEX_THREAD_ID' or key == 'CODEX_SESSION_ID' then env[key] = nil end
-    end
-    env = vim.tbl_extend('force', env, opts.env or {})
+  local env = vim.fn.environ()
+  for key in pairs(env) do
+    local upper=key:upper()
+    if (upper:match('^AGENT_') and upper~='AGENT_HUB_HOME') or upper=='CODEX_THREAD_ID' or upper=='CODEX_SESSION_ID'
+      or upper=='CLAUDE_SESSION_ID' or upper:match('^CLAUDE_CODE_MESSAGING_') or upper:match('^CLAUDE_CODE_SESSION_') then env[key]=nil end
   end
+  for key,value in pairs(opts.env or {}) do
+    local upper=key:upper()
+    if upper~='CODEX_THREAD_ID' and upper~='CODEX_SESSION_ID' and upper~='CLAUDE_SESSION_ID'
+      and not upper:match('^CLAUDE_CODE_MESSAGING_') and not upper:match('^CLAUDE_CODE_SESSION_') then env[key]=value end
+  end
+  env.NVIM=vim.v.servername
   env.AGENT_SESSION_ID = tostring(next_id + 1)
   local event_token = require('config.agent.hub').uid()
   env.AGENT_EVENT_TOKEN = event_token
   env.AGENT_EVENT_INSTANCE = require('config.agent.hub').id
   env.AGENT_EVENT_STARTED = tostring(os.time() * 1000)
-  local ok, chan = pcall(vim.fn.jobstart, opts.cmd, {
+  local prepared,prepare_error=require('config.agent.message_transport').prepare(opts,env)
+  if not prepared then return nil,prepare_error end
+  local ok, chan = pcall(vim.fn.jobstart, prepared.cmd, {
     term = true,
     cwd = opts.cwd,
     env = env,
-    clear_env = opts.resume and true or false,
+    clear_env = true,
     on_exit = function(id, code)
       -- 자동 종료 요청(M.done)으로 끝난 세션은 창까지 닫아 화면에 남기지 않는다.
       local e = M.entry_by_chan(id)
+      if e then require('config.agent.message_transport').stop_server(e.transport) end
       local buf = e and (e.auto_close or e.role == 'plan') and e.buf or nil
       if e and require('config.agent.workspace').active() and not e.auto_close and e.role ~= 'plan' then
         e.exit_code = code
@@ -109,6 +114,7 @@ function M.spawn(opts)
     end,
   })
   if not ok or type(chan) ~= "number" or chan <= 0 then
+    require('config.agent.message_transport').stop_server(prepared.transport)
     return nil, "터미널 생성 실패: " .. tostring(chan)
   end
 
@@ -116,9 +122,9 @@ function M.spawn(opts)
   local entry = {
     id = next_id,
     name = opts.name or make_name(opts.agent or "agent", opts.branch),
-    role = opts.role,
+    role = prepared.role or opts.role,
     resume = opts.resume,
-    model = opts.model,
+    model = prepared.model or opts.model,
     topic = opts.topic,
     agent = opts.agent,
     cwd = opts.cwd,
@@ -129,10 +135,14 @@ function M.spawn(opts)
     event_token = event_token,
     event_started = tonumber(env.AGENT_EVENT_STARTED),
     status = 'unknown',
+    transport = prepared.transport,
+    cli_session = prepared.transport and prepared.transport.expected_cli,
+    task_id = env.AGENT_TASK_ID,
     parent_id = tonumber(opts.env and opts.env.AGENT_PARENT_ID),
   }
   M.registry[next_id] = entry
   if opts.saved then require('config.agent.handoff').restore_resume(entry, opts.saved) end
+  if entry.transport and entry.transport.vendor=='codex' then vim.schedule(function()require('config.agent.message_transport').activate(entry)end) end
 
   -- winbar 가 버퍼 변수로 이름을 읽는다(Task 5).
   vim.b[entry.buf].agent_name = entry.name
@@ -158,7 +168,7 @@ function M.entries()
   return list
 end
 
---- 터미널 버퍼에 프롬프트가 나타날 때까지 기다린다(에이전트 CLI 기동 대기).
+--- UI-only helper. Management readiness never depends on terminal prompt text.
 --- @param id integer
 --- @param opts { pattern: string, interval_ms?: integer, timeout_ms?: integer, settle_ms?: integer }
 --- @param cb fun(ready: boolean)
@@ -185,59 +195,12 @@ function M.wait_ready(id, opts, cb)
   tick()
 end
 
---- 입력창에 본문이 남아 있는지(미제출) 검사한다.
---- @param buf integer
---- @param head string
---- @param prompt string
---- @return boolean
-local function still_pending(buf, head, prompt)
-  if not vim.api.nvim_buf_is_valid(buf) then return false end
-  local n = vim.api.nvim_buf_line_count(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, math.max(0, n - 40), n, false)
-  local seen_prompt = false
-  for _, l in ipairs(lines) do
-    if l:find(prompt, 1, true) then seen_prompt = true end
-    if seen_prompt and l:find(head, 1, true) then return true end
-  end
-  return false
-end
-
---- 터미널에 문자열을 주입하고 잠시 뒤 Enter 로 제출한다.
---- 본문과 Enter 를 한 번에 보내면 긴 본문이 붙여넣기로 인식돼 "\r" 이 줄바꿈이 된다.
---- Enter 를 보내도 제출되지 않는 경우가 있어(2026-10-01 핸드오프 id=3 관찰),
---- 제출 확인 후 미제출이면 재시도한다(최대 max_tries 회, 1초 간격, 홀수 회 "\r"/짝수 회 "\n").
---- @param id integer
---- @param text string
---- @param opts { enter_delay_ms?: integer, prompt?: string, max_tries?: integer }|nil
---- @return boolean ok, string|nil err
+-- Management text never touches the terminal composer.
 function M.send(id, text, opts)
   local e = M.registry[id]
-  if not e then
-    return false, "없는 터미널 id: " .. tostring(id)
-  end
-  if e.exit_code ~= nil then return false, '종료된 터미널입니다 (exit=' .. e.exit_code .. ')' end
-  local ok, err = pcall(vim.fn.chansend, e.chan, text)
-  if not ok then
-    return false, tostring(err)
-  end
-  local chan, buf = e.chan, e.buf
-  local prompt = (opts and opts.prompt) or "❯"
-  local head = text:sub(1, 20)
-  local tries, max_tries = 0, (opts and opts.max_tries) or 5
-  local function submit()
-    tries = tries + 1
-    pcall(vim.fn.chansend, chan, (tries % 2 == 1) and "\r" or "\n")
-    vim.defer_fn(function()
-      if not still_pending(buf, head, prompt) then return end
-      if tries >= max_tries then
-        vim.notify(string.format("터미널 id=%d: 브리핑이 입력창에 남아 있습니다. Enter 를 눌러 주세요.", id), vim.log.levels.WARN)
-        return
-      end
-      submit()
-    end, 1000)
-  end
-  vim.defer_fn(submit, (opts and opts.enter_delay_ms) or 1000)
-  return true, nil
+  if not e then return false, '없는 터미널 id: ' .. tostring(id) end
+  if e.exit_code ~= nil then return false, '종료된 터미널입니다' end
+  return require('config.agent.message_transport').send(e, text, opts)
 end
 
 --- 해당 터미널 창으로 이동한다. 창이 닫혀 있으면 분할해 다시 띄운다.
@@ -289,8 +252,7 @@ end
 --- 대상 선택 우선순위: id > pids(터미널 잡 PID 가 호출자의 조상이면 그 세션 — 마커를 찍은 바로 그 세션) > cwd.
 --- cwd 는 같은 폴더의 세션이 정확히 하나일 때만 쓴다 — 계획·작업 세션이 같은 폴더면 둘 이상이라
 --- 엉뚱한 창(계획 세션)을 닫게 되므로(2026-09-21 사고) 닫지 않고 FAIL 을 돌려준다.
---- 해당 터미널에 종료 명령(/exit · /quit)을 보내고, 프로세스가 끝나면
---- on_exit 가 창과 버퍼를 지운다. 10초 안에 안 끝나면 잡을 강제 종료한다.
+--- 정상 제어 지원이 없으면 실패한다. PTY 명령·강제 종료로 대체하지 않는다.
 --- @param o table { id=integer } | { pids=integer[], cwd=string|nil } | { cwd=string }
 --- @return string 결과 요약(원격 호출자가 읽는다)
 function M.done(o)
@@ -333,35 +295,9 @@ function M.done(o)
     return "FAIL: 버퍼가 이미 닫혔다"
   end
 
-  target.auto_close = true
-  local quit = target.agent == "Codex" and "/quit" or "/exit"
-  local ok, err = M.send(target.id, quit)
-  if not ok then
-    return "FAIL: " .. tostring(err)
-  end
-  -- 종료 명령이 먹지 않으면 강제 종료. on_exit 가 창 정리를 이어받는다.
-  local chan, buf = target.chan, target.buf
-  vim.defer_fn(function()
-    if M.entry_by_chan(chan) then
-      pcall(vim.fn.jobstop, chan)
-    end
-  end, 10000)
-  -- on_exit 를 못 타는 경우(핫패치 전에 띄운 세션 등)를 위한 안전망: 잡이 끝났는지 폴링해 버퍼를 지운다.
-  local timer = vim.uv.new_timer()
-  timer:start(1000, 1000, vim.schedule_wrap(function()
-    local alive = vim.fn.jobwait({ chan }, 0)[1] == -1
-    if alive then
-      return
-    end
-    timer:stop()
-    timer:close()
-    require('config.agent.workspace').close_session(target)
-    if vim.api.nvim_buf_is_valid(buf) then
-      pcall(vim.api.nvim_buf_delete, buf, { force = true })
-    end
-    M.registry[target.id] = nil
-  end))
-  return string.format("OK closing id=%d %s", target.id, target.name)
+  local ok, err = require('config.agent.message_transport').control(target, 'close')
+  if not ok then return 'FAIL: ' .. tostring(err) end
+  return 'PENDING: normal close requested; process exit is not yet verified'
 end
 
 -- 원격에서 v:lua.AgentDone(...) 로 부를 수 있게 전역에 노출한다.

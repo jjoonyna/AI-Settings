@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { install } from '../scripts/install-runtime.mjs';
@@ -85,7 +86,62 @@ test('PowerShell status fallback puts usage before context', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim().replace(/\r\n/g, '\n'), 'model ?\n5h ?\n7d ?\nCtx ?');
 });
-test('external design/PPT skills deploy independently with data, scripts and licenses', { skip: !process.env.AI_SETTINGS_TOOL_CACHE }, () => {
+test('normal reinstall preserves edited managed superpowers files', { skip: !process.env.AI_SETTINGS_TOOL_CACHE }, async () => {
+  for (const mode of ['both', 'codex']) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-personal-'));
+    try {
+      const home = path.join(temp, 'home');
+      const options = { home, nvim: path.join(temp, 'nvim'), mode, toolCache: process.env.AI_SETTINGS_TOOL_CACHE, skipToolDependencies: true };
+      const original = path.join(home, '.codex/skills/systematic-debugging/SKILL.md');
+      fs.mkdirSync(path.dirname(original), { recursive: true }); fs.writeFileSync(original, 'pre-install original');
+      install(options);
+      const skill = path.join(home, '.codex/skills/writing-plans/SKILL.md');
+      const resource = path.join(home, '.codex/skills/brainstorming/visual-companion.md');
+      fs.writeFileSync(skill, 'personal skill'); fs.writeFileSync(resource, 'personal resource');
+      const claudeSkill = path.join(home, '.claude/skills/writing-plans/SKILL.md');
+      if (mode === 'both') fs.writeFileSync(claudeSkill, 'personal Claude skill');
+      install(options); install(options);
+      assert.equal(fs.readFileSync(skill, 'utf8'), 'personal skill');
+      assert.equal(fs.readFileSync(resource, 'utf8'), 'personal resource');
+      if (mode === 'both') assert.equal(fs.readFileSync(claudeSkill, 'utf8'), 'personal Claude skill');
+      const manifest = JSON.parse(fs.readFileSync(path.join(home, '.ai-settings/manifest.json')));
+      assert.notEqual(manifest.files[skill], createHash('sha256').update('personal skill').digest('hex'));
+      const { uninstall } = await import(pathToFileURL(path.join(home, '.ai-settings/bin/uninstall.mjs')).href);
+      uninstall(home);
+      assert.equal(fs.readFileSync(skill, 'utf8'), 'personal skill');
+      assert.equal(fs.readFileSync(resource, 'utf8'), 'personal resource');
+      if (mode === 'both') assert.equal(fs.readFileSync(claudeSkill, 'utf8'), 'personal Claude skill');
+      assert.equal(fs.readFileSync(original, 'utf8'), 'pre-install original');
+    } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+  }
+});
+test('failure after overlay restores previous active files and manifest', { skip: !process.env.AI_SETTINGS_TOOL_CACHE }, () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-after-overlay-'));
+  try {
+    const home = path.join(temp, 'home');
+    const options = { home, nvim: path.join(temp, 'nvim'), mode: 'codex', toolCache: process.env.AI_SETTINGS_TOOL_CACHE, skipToolDependencies: true };
+    install(options);
+    const skill = path.join(home, '.codex/skills/writing-plans/SKILL.md');
+    const manifest = path.join(home, '.ai-settings/manifest.json');
+    const config = path.join(home, '.codex/config.toml');
+    fs.writeFileSync(skill, 'previous managed skill');
+    const previousManifest = JSON.parse(fs.readFileSync(manifest));
+    previousManifest.files[skill] = createHash('sha256').update('previous managed skill').digest('hex');
+    fs.writeFileSync(manifest, JSON.stringify(previousManifest));
+    fs.appendFileSync(config, '\n# personal\n');
+    const before = [skill, manifest, config].map(p => fs.readFileSync(p));
+    const writeFile = fs.writeFileSync;
+    try {
+      fs.writeFileSync = function (p, ...args) {
+        if (String(p).endsWith('previous-manifest.json')) throw new Error('intentional after overlay');
+        return writeFile.call(this, p, ...args);
+      };
+      assert.throws(() => install(options), /intentional after overlay/);
+    } finally { fs.writeFileSync = writeFile; }
+    [skill, manifest, config].forEach((p, i) => assert.deepEqual(fs.readFileSync(p), before[i]));
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+test('external design/PPT skills deploy independently with data, scripts and licenses', { skip: !process.env.AI_SETTINGS_TOOL_CACHE }, async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-tools-'));
   try {
     const home = path.join(temp, 'home');
@@ -102,11 +158,18 @@ test('external design/PPT skills deploy independently with data, scripts and lic
     for (const name of ['refactoring', 'working-effectively-with-legacy-code']) assert.ok(fs.existsSync(path.join(home, '.codex/skills', name, 'LICENSE')), `${name} LICENSE`);
     const manifest = JSON.parse(fs.readFileSync(path.join(result.root, 'manifest.json')));
     assert.equal(Object.keys(manifest.tools).length, 8);
+    assert.equal(manifest.tools.superpowers.commit, '896224c4b1879920ab573417e68fd51d2ccc9072');
+    assert.deepEqual(fs.readFileSync(path.join(home, '.codex/skills/brainstorming/visual-companion.md')),
+      fs.readFileSync(path.join(process.env.AI_SETTINGS_TOOL_CACHE, 'superpowers/skills/brainstorming/visual-companion.md')));
+    assert.deepEqual(fs.readFileSync(path.join(home, '.codex/skills/brainstorming/LICENSE')),
+      fs.readFileSync(path.join(process.env.AI_SETTINGS_TOOL_CACHE, 'superpowers/LICENSE')));
     for (const name of manifest.tools.superpowers.skills) {
       const codex = path.join(home, '.codex/skills', name), claude = path.join(home, '.claude/skills', name);
       const compare = (a, b) => { for (const entry of fs.readdirSync(a, { withFileTypes: true })) { const x = path.join(a, entry.name), y = path.join(b, entry.name); if (entry.isDirectory()) compare(x, y); else assert.deepEqual(fs.readFileSync(x), fs.readFileSync(y)); } };
       compare(codex, claude);
       assert.ok(fs.existsSync(path.join(codex, 'LICENSE')));
+      const overlay = fileURLToPath(new URL(`../runtime/superpowers-overlay/${name}/SKILL.md`, import.meta.url));
+      if (fs.existsSync(overlay)) assert.deepEqual(fs.readFileSync(path.join(codex, 'SKILL.md')), fs.readFileSync(overlay));
     }
     assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json'))).enabledPlugins['superpowers@claude-plugins-official'], false);
     install(options);
@@ -119,6 +182,10 @@ test('external design/PPT skills deploy independently with data, scripts and lic
     assert.doesNotMatch(fs.readFileSync(path.join(home, '.codex/config.toml'), 'utf8'), /AI-Settings[\\/]/);
     install({ ...options, mode: 'both', skipTools: true });
     assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json'))).enabledPlugins['superpowers@claude-plugins-official'], true);
+    const { uninstall } = await import(pathToFileURL(path.join(result.root, 'bin/uninstall.mjs')).href);
+    uninstall(home);
+    assert.equal(fs.existsSync(path.join(home, '.codex/skills/writing-plans/SKILL.md')), false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(home, '.claude/settings.json'))).enabledPlugins.personal, true);
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 test('a corrupt local config rolls earlier file changes back', () => {
@@ -150,6 +217,47 @@ test('skipTools preserves plugin without a managed Claude bundle', () => {
     install({ home, nvim, mode: 'both', skipTools: true });
     assert.equal(JSON.parse(fs.readFileSync(settings)).enabledPlugins['superpowers@claude-plugins-official'], true);
     assert.equal(fs.readFileSync(skill, 'utf8'), 'personal');
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+test('skipTools overlays only an unchanged managed superpowers skill and preserves its original', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-settings-overlay-'));
+  try {
+    const home = path.join(temp, 'home'), options = { home, nvim: path.join(temp, 'nvim'), mode: 'codex', skipTools: true };
+    install(options);
+    const skill = path.join(home, '.codex/skills/writing-plans/SKILL.md');
+    fs.mkdirSync(path.dirname(skill), { recursive: true }); fs.writeFileSync(skill, 'upstream');
+    const manifestPath = path.join(home, '.ai-settings/manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath));
+    manifest.files[skill] = createHash('sha256').update('upstream').digest('hex');
+    manifest.originals[skill] = null;
+    manifest.tools = { superpowers: { commit: 'other', skills: ['writing-plans'] } };
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    install(options);
+    assert.equal(fs.readFileSync(skill, 'utf8'), 'upstream');
+    const managed = JSON.parse(fs.readFileSync(manifestPath));
+    managed.tools.superpowers.commit = '896224c4b1879920ab573417e68fd51d2ccc9072';
+    fs.writeFileSync(manifestPath, JSON.stringify(managed));
+    install(options);
+    assert.equal(fs.readFileSync(skill, 'utf8'), fs.readFileSync(new URL('../runtime/superpowers-overlay/writing-plans/SKILL.md', import.meta.url), 'utf8'));
+    assert.equal(fs.existsSync(path.join(home, '.codex/skills/brainstorming/SKILL.md')), false);
+    fs.writeFileSync(skill, 'personal edit');
+    install(options);
+    assert.equal(fs.readFileSync(skill, 'utf8'), 'personal edit');
+    const { uninstall } = await import(pathToFileURL(path.join(home, '.ai-settings/bin/uninstall.mjs')).href);
+    uninstall(home);
+    assert.equal(fs.readFileSync(skill, 'utf8'), 'personal edit');
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+test('app preview outputs root and legacy review documents', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-preview-'));
+  try {
+    const docs = path.join(temp, 'docs'); fs.mkdirSync(path.join(docs, 'user-review'), { recursive: true });
+    for (const relative of ['root.md', 'user-review/legacy.md']) {
+      const file = path.join(docs, relative); fs.writeFileSync(file, '# review\n');
+      const env = { ...process.env }; delete env.NVIM;
+      const run = spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/runtime/session.mjs', import.meta.url)), 'preview', file], { env, encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr); assert.equal(run.stdout, '# review\n');
+    }
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 test('legacy folder junctions become copies without changing their source', () => {
@@ -229,10 +337,24 @@ test('independent install, reinstallation, personal configuration, mode switch a
     assert.equal(fs.readFileSync(path.join(home, '.claude/.credentials.json'), 'utf8'), '{"keep":"secret"}');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
+test('transport reinstall preserves existing Python metadata when dependency/tool work is skipped', () => {
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'transport-metadata-'));
+  const home=path.join(temp,'home'),nvim=path.join(temp,'nvim');
+  try {
+    install({home,nvim,mode:'both',skipTools:true});
+    const metadataFile=path.join(home,'.ai-settings/install.json');
+    const before=JSON.parse(fs.readFileSync(metadataFile));before.python=path.join(home,'.ai-settings/python/Scripts/python.exe');
+    fs.mkdirSync(path.dirname(before.python),{recursive:true});fs.writeFileSync(before.python,'synthetic');
+    fs.writeFileSync(metadataFile,JSON.stringify(before));
+    install({home,nvim,mode:'codex',skipTools:true});
+    for(const file of [metadataFile,path.join(nvim,'ai-settings.json')])assert.equal(JSON.parse(fs.readFileSync(file)).python,before.python);
+    for(const name of ['session-codex.mjs','session-inbox.mjs','session-message-prepare.mjs','session-native.mjs'])assert(fs.existsSync(path.join(home,'.ai-settings/bin',name)));
+  } finally {fs.rmSync(temp,{recursive:true,force:true});}
+});
 test('session.mjs report - reads stdin and reaches the server check', async () => {
   const { spawnSync } = await import('node:child_process');
   const script = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..', 'scripts', 'runtime', 'session.mjs');
-  const env = { ...process.env }; delete env.AGENT_PARENT_SERVER;
+  const env = { ...process.env }; delete env.AGENT_PARENT_SERVER; env.NVIM = 'unrelated-server';
   const none = spawnSync(process.execPath, [script, 'report', '-'], { input: 'x', env, encoding: 'utf8' });
   assert.equal(none.status, 1); assert.match(none.stderr, /server is unavailable/);
   env.AGENT_PARENT_SERVER = path.join(os.tmpdir(), 'no-such-nvim-pipe');
@@ -285,4 +407,32 @@ test('Claude secret deny rules merge with user permissions and are removed witho
     assert.deepEqual(after.permissions.ask, ['Bash(ask-me)']);
     assert.equal(after.permissions.defaultMode, 'plan');
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('session.mjs rejects conflicting Codex session IDs before probing', () => {
+  const script = fileURLToPath(new URL('../scripts/runtime/session.mjs', import.meta.url));
+  const env = { ...process.env, NVIM: 'unused', AGENT_SESSION_VENDOR: 'codex', CODEX_THREAD_ID: '12345678-1234-1234-1234-123456789abc', CODEX_SESSION_ID: '87654321-1234-1234-1234-123456789abc' };
+  const result = spawnSync(process.execPath, [script, 'activity', 'working'], { env, encoding: 'utf8' });
+  assert.equal(result.status, 1); assert.match(result.stderr, /conflict/i);
+});
+
+
+test('session MCP is installed once and uninstall preserves personal MCP and original managed name', async () => {
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'session-mcp-install-'));
+  try {
+    const home=path.join(temp,'home'), options={home,nvim:path.join(temp,'nvim'),mode:'codex',skipTools:true};
+    const config=path.join(home,'.codex/config.toml');fs.mkdirSync(path.dirname(config),{recursive:true});
+    fs.writeFileSync(config,'[mcp_servers.personal]\ncommand = "mine"\n[mcp_servers.ai_settings_sessions]\ncommand = "original"\n');
+    install(options);install(options);
+    const values=(await import('../scripts/config-merge.mjs')).tomlValues(fs.readFileSync(config,'utf8'));
+    assert.equal(JSON.parse(values['mcp_servers.ai_settings_sessions.command']),process.execPath);
+    assert.equal(JSON.parse(values['mcp_servers.ai_settings_sessions.args'])[0],path.join(home,'.ai-settings/bin/session-tools.mjs'));
+    const names=JSON.parse(values['mcp_servers.ai_settings_sessions.env_vars']);
+    assert.ok(names.includes('AGENT_TASK_ID'));assert.ok(!names.includes('AGENT_EVENT_TOKEN'));
+    assert.equal((fs.readFileSync(config,'utf8').match(/\[mcp_servers.ai_settings_sessions\]/g)||[]).length,1);
+    assert.ok(fs.existsSync(path.join(home,'.ai-settings/bin/session-tools.mjs')));
+    const {uninstall}=await import(pathToFileURL(path.join(home,'.ai-settings/bin/uninstall.mjs')).href);uninstall(home);
+    const restored=fs.readFileSync(config,'utf8');assert.match(restored,/command = "original"/);assert.match(restored,/command = "mine"/);
+    assert.doesNotMatch(restored,/session-tools|env_vars/);
+  } finally {fs.rmSync(temp,{recursive:true,force:true});}
 });

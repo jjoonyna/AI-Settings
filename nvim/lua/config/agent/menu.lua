@@ -21,8 +21,20 @@ function M.pick(callback, mode)
     if not agent then return end
     if mode ~= 'new' then
       local cwd = vim.fn.getcwd()
-      if mode == 'continue' then callback({ agent = agent.key, session = 'plan', resume = mode, cwd = cwd }); return end
       local script = policy.installation().runtime .. '/bin/session-list.mjs'
+      if mode=='continue' then
+        -- Resolve an exact saved ID before invoking the existing immediate continue callback.
+        local result
+        local job=vim.system({'node',script,agent.key,cwd},{text=true,timeout=5000},function(r)result=r end)
+        if job then result=job:wait() end
+        local ok,sessions=pcall(vim.json.decode,result and result.stdout or '')
+        if not result or result.code~=0 or not ok or type(sessions)~='table' or not sessions[1] then
+          vim.notify('현재 폴더의 정확한 최근 세션을 확인할 수 없습니다',vim.log.levels.ERROR);return
+        end
+        local item=sessions[1]
+        callback({agent=agent.key,session='plan',resume=mode,cwd=cwd,saved=item,model=item.model})
+        return
+      end
       vim.system({ 'node', script, agent.key, cwd }, { text = true }, vim.schedule_wrap(function(result)
         local ok, sessions = pcall(vim.json.decode, result.stdout or '')
         if result.code ~= 0 or not ok or type(sessions) ~= 'table' then vim.notify('저장 세션을 읽을 수 없습니다', vim.log.levels.ERROR); return end

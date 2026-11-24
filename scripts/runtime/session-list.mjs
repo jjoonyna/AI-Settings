@@ -32,6 +32,8 @@ export function listSessions(vendor, cwd, env = process.env) {
           : records.some(r => r.sessionId === id) && !records.some(r => r.sessionId && r.sessionId !== id);
         const directory = vendor === 'codex' ? records[0]?.payload?.cwd : records.find(r => r.sessionId === id && r.cwd)?.cwd;
         if (!valid || typeof directory !== 'string' || normalized(directory) !== normalized(cwd)) continue;
+        if (vendor === 'codex' && records[0].payload.source !== null && typeof records[0].payload.source === 'object'
+          && Object.hasOwn(records[0].payload.source, 'subagent')) continue;
         candidates.push({ id, records, modified: fs.statSync(file).mtimeMs });
       } catch { /* Ignore incomplete or unreadable transcripts. */ }
     }

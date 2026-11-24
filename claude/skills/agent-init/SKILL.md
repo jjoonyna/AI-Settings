@@ -11,6 +11,6 @@ description: 프로젝트 코드와 규칙을 조사해 로컬 AI 지침과 docs
 2. 기존 AGENTS.md·CLAUDE.md가 있으면 읽고 필요한 부분만 갱신한다. 추적 중인 파일을 임의로 삭제·추적 해제하지 않는다. 새로운 두 파일은 로컬 전용으로 작성한다. 프로젝트 요약·필수 검증·docs 문서 링크만 간결히 담고 PC별 절대경로는 넣지 않는다.
 3. `docs/architecture.md`, `docs/rules.md`, `docs/impact.md`는 해당하는 기존 문서를 우선 갱신한다. 실제 코드로 확인한 구조·진입점·데이터 흐름·의존성·변경 영향·개발 규칙을 필요한 만큼 기록한다. 새 규칙·주요 구조 결정은 사용자와 논의한다. reference/의 기존 예시는 조사 참고용이며 그대로 복사하지 않는다.
 4. Git 제외는 루트 `/docs/`, `/AGENTS.md`, `/CLAUDE.md`, `/.agent-shared.md`, `/worktrees/`를 추가한다. 루트 README.md·CHANGELOG.md는 제외하지 않는다. 이미 추적된 내부 문서의 추적 해제는 사용자 지시를 따른다.
-5. spec은 `docs/specs/`, plan은 `docs/plans/`, 사용자 검토 문서는 `docs/user-review/<사용자 주제>.md`에 둔다. 사용자 검토 문서는 현재 상태와 결정할 핵심만 기록한다.
+5. spec은 `docs/superpowers/specs/`, plan은 `docs/superpowers/plans/`, 사용자 검토 문서는 `docs/<사용자 주제>.md`에 둔다. 작업별 임시는 `docs/tmp/<작업>/`, 공유 자료는 `docs/shared/<작업>/`에 둔다. 기존 검토 경로는 호환한다. 사용자 검토 문서는 현재 상태와 결정할 핵심만 기록한다.
 6. 기존 `.claude/settings.local.json`은 보존한다. 조사한 검증 명령을 허용 목록에 추가할 때도 기존 권한을 유지한다. 임의로 광범위한 권한이나 머신 종속 절대경로를 추가하지 않는다.
 7. 생성·갱신 위치, 확인하지 못한 정보와 다음 작업을 짧게 보고한다. 커밋·머지·push를 먼저 제안하지 않는다.

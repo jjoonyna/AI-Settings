@@ -68,17 +68,18 @@ vim.g.mapleader = ' '
 vim.o.mouse = 'a'
 dofile(vim.fn.stdpath('config') .. '/lua/config/keymaps.lua')
 W, T, R = require('config.agent.workspace'), require('config.agent.terminal'), require('config.agent.reviews')
+require('config.agent.message_transport').prepare=function(opts)return {cmd=opts.cmd,role=opts.role,model=opts.model}end
 original_tab, original_buf = vim.api.nvim_get_current_tabpage(), vim.api.nvim_get_current_buf()
 local schedule_wrap=vim.schedule_wrap
 vim.schedule_wrap=function(fn) workspace_tick=fn; return schedule_wrap(fn) end
 W.open(false)
 vim.schedule_wrap=schedule_wrap
 local cmd = {vim.fn.exepath('node'), '-e', 'setInterval(()=>{},1000)'}
-a = assert(T.spawn({cmd=cmd, agent='Codex', role='plan', model='gpt-6.1-sol', name='계획 | A', cwd=vim.fn.getcwd()}))
-b = assert(T.spawn({cmd=cmd, agent='Codex', role='work', model='gpt-6.1-terra', name='작업 | B', cwd=vim.fn.getcwd(), env={AGENT_PARENT_ID=tostring(a)}}))
-local root = vim.env.AGENT_HUB_HOME .. '/docs/user-review'
-vim.fn.mkdir(root, 'p')
-p, q = root .. '/first.md', root .. '/긴한글제목 English document title for resize testing.md'
+local project = vim.env.AGENT_HUB_HOME
+vim.fn.mkdir(project .. '/docs/user-review', 'p')
+a = assert(T.spawn({cmd=cmd, agent='Codex', role='plan', model='gpt-6.1-sol', name='계획 | A', cwd=project}))
+b = assert(T.spawn({cmd=cmd, agent='Codex', role='work', model='gpt-6.1-terra', name='작업 | B', cwd=project, env={AGENT_PARENT_ID=tostring(a)}}))
+p, q = project .. '/docs/first.md', project .. '/docs/user-review/긴한글제목 English document title for resize testing.md'
 vim.fn.writefile({'# First'},p); vim.fn.writefile({'# Second'},q)
 W.select(a,true)
 """)
