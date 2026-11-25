@@ -12,17 +12,16 @@ after(()=>fs.rmSync(o.directory,{recursive:true,force:true}));
 function initializeCodex(input,...rest){for(const name of ['launch.initialize.claim','launch.bound.message.json'])fs.rmSync(path.join(input.directory,name),{force:true});fs.writeFileSync(path.join(input.directory,'launch.message.json'),JSON.stringify(input));return nativeInitialize(input,...rest);}
 const env={NVIM:'synthetic-server',AGENT_HUB_HOME:o.hub,AGENT_EVENT_INSTANCE:'instance',AGENT_SESSION_ID:'4',AGENT_TASK_ID:'task',AGENT_EVENT_TOKEN:'private-event'};
 function response(role='plan') {return {thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:role==='review'?'never':'on-request',approvalsReviewer:'auto_review',
-  ...(role==='plan'?{activePermissionProfile:{id:'plan-docs',extends:':read-only'},sandbox:{type:'workspaceWrite',writableRoots:[path.join(o.cwd,'docs'),path.join(o.cwd,'.agent-shared.md')],networkAccess:false,excludeTmpdirEnvVar:true,excludeSlashTmp:true}}
-  :{sandbox:{type:role==='review'?'dangerFullAccess':'workspaceWrite'}})};}
+  sandbox:{type:'dangerFullAccess'}};}
 test('private server recipe keeps exact managed MCP identity and role policy; no shared daemon or body',()=>{
   const a=codexRecipe(o,env),b=codexRecipe({...o,socket:path.resolve('synthetic/other/c.sock')},env);
   assert.notEqual(a.endpoint,b.endpoint);assert(a.serverArgs.includes('--listen'));assert(!a.serverArgs.includes('--no-daemon'));
   assert.equal(a.request.config['mcp_servers.ai_settings_sessions'].env.AGENT_TASK_ID,'task');
-  assert(!JSON.stringify(a).includes('private-event'));assert.equal(a.request.permissions,'plan-docs');
+  assert(!JSON.stringify(a).includes('private-event'));assert.equal(a.request.sandbox,'danger-full-access');
   assert.deepEqual(a.tuiArgs(id).slice(-2),['resume',id]);assert(a.tuiArgs(id).includes('--remote'));
   assert.throws(()=>a.tuiArgs('wrong'));assert.throws(()=>codexRecipe({...o,role:'other'},env));
   verifyCodex(response(),o);assert.throws(()=>verifyCodex({...response(),model:'wrong'},o));
-  assert.throws(()=>verifyCodex({...response(),sandbox:{...response().sandbox,writableRoots:[o.cwd]}},o));
+  assert.throws(()=>verifyCodex({...response(),sandbox:{type:'workspaceWrite'}},o));
   assert.throws(()=>verifyCodex(response(),{...o,resume:'22222222-2222-4222-8222-222222222222'}));
   for(const role of ['work','review'])verifyCodex(response(role),{...o,role});
 });

@@ -14,10 +14,18 @@ const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const string = v => typeof v === 'string' && v.trim().length > 0 && !v.includes('\0');
 const owner = v => Number.isSafeInteger(v) && v > 0;
+const label = k => String(k).replace(/[\x00-\x1f\x7f]/g,'').slice(0,64);
+const names = list => list.slice(0,10).map(label).join(', ');
 function fields(value, allowed, required = allowed) {
-  if (!object(value) || Object.keys(value).some(k => !allowed.includes(k)) || required.some(k => !Object.hasOwn(value,k)))
-    throw new Error('argument: unsupported or missing field');
+  if (!object(value)) throw new Error('argument: object required');
+  const unsupported = Object.keys(value).filter(k => !allowed.includes(k)), missing = required.filter(k => !Object.hasOwn(value,k));
+  if (missing.length) throw new Error(`argument: missing ${names(missing)}`);
+  if (unsupported.length) throw new Error(`argument: unsupported ${names(unsupported)}`);
 }
+const HANDOFF_REQUIRED = ['agent','session','model','name','goal','scope','validation','prompt','spec_doc','plan_doc'];
+const HANDOFF_FIELDS = [...HANDOFF_REQUIRED,'decisions','references','report_to','cwd','worktree','task_id','verify_cmds'];
+const HANDOFF_REQUEST = {type:'object',properties:Object.fromEntries(HANDOFF_FIELDS.map(k=>[k,k==='verify_cmds'?{type:'array',items:{type:'string'}}:{type:'string'}])),
+  required:HANDOFF_REQUIRED,additionalProperties:false};
 function document(root, value) {
   if (!string(value)) throw new Error('path: Markdown document required');
   try {
@@ -32,7 +40,7 @@ function document(root, value) {
 }
 const schemas = {
   connection_status: {},
-  handoff: {request:{type:'object'}},
+  handoff: {request:HANDOFF_REQUEST},
   preview: {path:{type:'string'}},
   report: {text:{type:'string'}},
   task_complete: {owner:{type:'integer',minimum:1},task_id:{type:'string'},verified:{const:true},reviewed:{const:true}},
@@ -40,7 +48,7 @@ const schemas = {
 };
 const descriptions = {
   connection_status:'Verify this managed Codex/Claude/Neovim session identity, actual role and model.',
-  handoff:'Plan only: start a persistent work/review child at or below the actual caller model. request uses existing handoff fields: agent, session, model, name, goal, scope, validation, prompt, spec_doc, plan_doc; optional decisions, references, report_to, cwd, worktree, task_id, verify_cmds. Documents must be inside current project docs.',
+  handoff:'Plan only: start a persistent work/review child at or below the actual caller model. request uses existing handoff fields: agent, session, model, name, goal, scope, validation, prompt, spec_doc, plan_doc; optional decisions, references, report_to, cwd, worktree, task_id, verify_cmds. spec_doc and plan_doc are required: real .md files inside the current project docs. Documents must be inside current project docs.',
   preview:'Plan only: show a current-project docs Markdown file for this exact session/task. Closing is not approval.',
   report:'Work/review only: send text to the verified actual parent. Check OK; do not retry an uncertain mutation.',
   task_complete:'Plan only: confirm an exact direct child after verification and independent review; preserve approval checks.',
@@ -180,10 +188,9 @@ export function callTool(name, args, env=process.env, dependencies={}, requestMe
     return execute('task-complete',{...args,resolved_session:metadata,session_tools:guard});
   }
   const request=args.request;
-  fields(request,['agent','session','model','name','goal','scope','validation','prompt','spec_doc','plan_doc','decisions','references','report_to','cwd','worktree','task_id','verify_cmds'],
-    ['agent','session','model','name','goal','scope','validation','prompt','spec_doc','plan_doc']);
+  fields(request,HANDOFF_FIELDS,HANDOFF_REQUIRED);
   if (!['work','review'].includes(request.session)) throw new Error('role: handoff requires work/review');
-  for (const [key,value] of Object.entries(request)) if(key!=='verify_cmds' && !string(value)) throw new Error('argument: handoff strings required');
+  for (const [key,value] of Object.entries(request)) if(key!=='verify_cmds' && !string(value)) throw new Error(`argument: ${typeof value==='string'?'empty':'invalid'} ${label(key)}`);
   if (request.verify_cmds!==undefined && (!Array.isArray(request.verify_cmds) || request.verify_cmds.some(v=>!string(v)))) throw new Error('argument: verify_cmds must be strings');
   const catalog=JSON.parse(fs.readFileSync(path.join(env.AI_SETTINGS_HOME || path.join(os.homedir(), '.ai-settings'), 'models.json'),'utf8'));
   const parent=catalog.models.find(m=>m.id===metadata.model), selected=catalog.models.find(m=>m.id===request.model);

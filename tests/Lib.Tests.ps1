@@ -41,7 +41,7 @@ Describe 'Expand-Template' {
     $c = Get-Content -LiteralPath $o -Raw
     $c | Should -Match 'notify = \["node", "C:/Users/tester/\.claude/hooks/agent-done\.js", "--codex"\]'
     $c | Should -Match "\[projects\.'c:\\proj'\]"
-    $c | Should -Match 'sandbox = "elevated"'
+    $c | Should -Match 'sandbox_mode = "danger-full-access"'
   }
   It '한글 주석을 그대로 남기고 BOM 없이 쓴다' {
     $t = Join-Path $Tmp 'kor.tmpl'; $o = Join-Path $Tmp 'kor.out'

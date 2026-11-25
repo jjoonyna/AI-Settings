@@ -22,7 +22,7 @@ function configuredCatalog(e=env) {
   const r=spawnSync(process.execPath,[fileURLToPath(new URL('../scripts/runtime/session-tools.mjs',import.meta.url))],{env:e,input,encoding:'utf8'});
   assert.equal(r.status,0);return r.stdout.trim().split('\n').map(JSON.parse);
 }
-function response(){return {thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}};}
+function response(){return {thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}};}
 function status(meta) {return {name:'ai_settings_sessions',authStatus:'unsupported',runtimeStatus:'connected',serverInfo:{name:'ai-settings-sessions',version:'0.1.0'},
   serverCapabilities:{tools:{}},toolsError:null,resources:[],resourceTemplates:[],toolListMeta:meta,
   tools:Object.fromEntries(tools.map(t=>[t.name,t]))};}

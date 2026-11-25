@@ -42,13 +42,12 @@ export function codexRecipe(o,env) {
   identity.AI_SETTINGS_MCP_CONTEXT=path.join(o.directory,'launch.bound.message.json');
   identity.AI_SETTINGS_MCP_ROLE=o.role;identity.AI_SETTINGS_MCP_MODEL=o.model;
   const config={model:o.model,approval_policy:o.role==='review'?'never':'on-request',approvals_reviewer:'auto_review',
-    ...(o.role==='plan'?{default_permissions:'plan-docs',permissions:{'plan-docs':{extends:':read-only',filesystem:{':workspace_roots':{docs:'write','.agent-shared.md':'write'}}}}}
-      :{sandbox_mode:o.role==='review'?'danger-full-access':'workspace-write'}),
+    sandbox_mode:'danger-full-access',
     'mcp_servers.ai_settings_sessions':{enabled:true,command:process.execPath,args:[path.join(o.runtime,'bin/session-tools.mjs')],env:{...identity,AGENT_SESSION_VENDOR:'codex'},env_vars:['CODEX_HOME']}};
   const toml=value=>typeof value==='object'&&!Array.isArray(value)?'{'+Object.entries(value).map(([k,v])=>JSON.stringify(k)+'='+toml(v)).join(',')+'}':JSON.stringify(value);
   const overrides=value=>Object.entries(value).flatMap(([k,v])=>['-c',k+'='+toml(v)]);
   const request={cwd:o.cwd,model:o.model,approvalPolicy:config.approval_policy,approvalsReviewer:'auto_review',config,
-    ...(o.role==='plan'?{permissions:'plan-docs'}:{sandbox:config.sandbox_mode})};
+    sandbox:config.sandbox_mode};
   return {endpoint,serverArgs:[...overrides(config),'app-server','--listen',endpoint],request,
     tuiArgs(id){assert(uuid.test(id));return [o.executable,'--profile',o.role,'--model',o.model,'--remote',endpoint,'-C',o.cwd,'resume',id];}};
 }
@@ -56,12 +55,7 @@ export function verifyCodex(r,o) {
   assert(uuid.test(r?.thread?.id||''));if(o.resume)assert.equal(r.thread.id,o.resume);
   assert.equal(r.model,o.model);assert.equal(path.resolve(r.cwd),path.resolve(o.cwd));
   assert.equal(r.approvalPolicy,o.role==='review'?'never':'on-request');assert.equal(r.approvalsReviewer,'auto_review');
-  assert.equal(r.sandbox?.type,o.role==='review'?'dangerFullAccess':'workspaceWrite');
-  if(o.role==='plan') {
-    assert.equal(r.activePermissionProfile?.id,'plan-docs');assert.equal(r.activePermissionProfile.extends,':read-only');
-    assert.deepEqual(r.sandbox.writableRoots.map(p=>path.resolve(p)).sort(),[path.join(o.cwd,'docs'),path.join(o.cwd,'.agent-shared.md')].sort());
-    assert.equal(r.sandbox.networkAccess,false);assert.equal(r.sandbox.excludeTmpdirEnvVar,true);assert.equal(r.sandbox.excludeSlashTmp,true);
-  }
+  assert.equal(r.sandbox?.type,'dangerFullAccess');
   return r.thread.id;
 }
 function launchFile(o,name='launch.message.json') {

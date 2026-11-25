@@ -30,18 +30,19 @@ assert(not M.receive(ready).ok,'duplicate readiness must not repeat startup')
 assert(M.receive({operation='end',identity=identity}).ok and not e.transport.ready)
 assert(not M.receive(ready).ok,'ended launch must not be rearmed')
 local c={id=8,agent='Claude',model='sonnet',role='work',task_id='claude-task',cli_session=id,event_token='synthetic-c',
-  transport={vendor='claude',ready=true,model_verified=true,expected_cli=id,cli_session=id}}
+  transport={vendor='claude',ready=true,model_verified=true,expected_cli=id,cli_session=id,last_take=os.time()}}
 T.registry[8]=c
 for i=1,16 do assert(M.send(c,'body-'..i,{request_id='c-'..i})) end
 assert(not M.send(c,'overflow',{request_id='overflow'}),'saturated queue must reject')
 local ci={owner=8,instance='instance',task_id='claude-task',vendor='claude',cli_session=id,token='synthetic-c'}
+c.transport.inbox_bound=true;c.transport.hook_id=id
 c.messages[1].created=os.time()-M.ttl-1
-local taken=M.receive({operation='take',identity=ci});assert(taken.ok and taken.message.id=='c-2' and c.messages[1].state=='failed')
-assert(M.receive({operation='result',identity=ci,message_id='c-2',state='accepted',detail='SECRET_PIPE'}).ok)
+local taken=M.receive({operation='take',identity=ci,hook_id=id});assert(taken.ok and taken.message.id=='c-2' and c.messages[1].state=='failed')
+assert(M.receive({operation='result',identity=ci,hook_id=id,message_id='c-2',state='accepted',detail='SECRET_PIPE'}).ok)
 assert(c.messages[2].state=='unknown' and not c.messages[2].detail:find('SECRET',1,true),'inbox write alone cannot become accepted; raw details are discarded')
-assert(not M.receive({operation='result',identity=ci,message_id='c-2',state='accepted'}).ok)
-c.role='review';assert(not M.receive({operation='take',identity=ci}).message,'role change invalidates queued bodies')
-local p={id=10,agent='Claude',role='plan',model='sonnet',task_id='p',cli_session=id,event_token='p-token',transport={vendor='claude',ready=true,model_verified=true,expected_cli=id,cli_session=id}}
+assert(not M.receive({operation='result',identity=ci,hook_id=id,message_id='c-2',state='accepted'}).ok)
+c.role='review';assert(not M.receive({operation='take',identity=ci,hook_id=id}).message,'role change invalidates queued bodies')
+local p={id=10,agent='Claude',role='plan',model='sonnet',task_id='p',cli_session=id,event_token='p-token',transport={vendor='claude',ready=true,model_verified=true,expected_cli=id,cli_session=id,last_take=os.time()}}
 local child={id=11,agent='Codex',role='work',model='gpt-6.1-sol',task_id='child',parent_id=10}
 T.registry[10]=p;T.registry[11]=child
 assert(not M.send(p,'report',{sender={owner=11,task_id='child'}}),'unbound sender cannot dispatch a stored report')
@@ -49,5 +50,23 @@ child.cli_session='22222222-2222-4222-8222-222222222222'
 assert(M.send(p,'report',{request_id='report-test',sender={owner=11,task_id='child',cli_session=child.cli_session}}))
 child.task_id='reused'
 local pi={owner=10,instance='instance',task_id='p',vendor='claude',cli_session=id,token='p-token'}
-assert(not M.receive({operation='take',identity=pi}).message,'reused sender task invalidates report before provider dispatch')
+p.transport.inbox_bound=true;p.transport.hook_id=id
+assert(not M.receive({operation='take',identity=pi,hook_id=id}).message,'reused sender task invalidates report before provider dispatch')
+-- R3/R4: inbox liveness and abandoned claimed messages.
+local sid='33333333-3333-4333-8333-333333333333'
+local s={id=12,agent='Claude',model='sonnet',role='work',task_id='stale-task',cli_session=sid,event_token='synthetic-s',
+  transport={vendor='claude',ready=true,model_verified=true,expected_cli=sid,cli_session=sid,last_take=os.time()-M.inbox_stale-1}}
+T.registry[12]=s
+local denied,reason=M.send(s,'late report',{request_id='stale-1'})
+assert(denied==false and reason:find('수신함 응답 없음',1,true) and #(s.messages or {})==0,'no take for >30s rejects new messages without queueing')
+local si={owner=12,instance='instance',task_id='stale-task',vendor='claude',cli_session=sid,token='synthetic-s'}
+s.transport.inbox_bound=true;s.transport.hook_id=sid
+assert(M.receive({operation='take',identity=si,hook_id=sid}).ok and s.transport.last_take>=os.time()-1,'take records liveness')
+assert(M.send(s,'live report',{request_id='stale-2'}),'send allowed again after a take')
+local taken2=M.receive({operation='take',identity=si,hook_id=sid});assert(taken2.message and taken2.message.id=='stale-2')
+s.messages[1].created=os.time()-M.ttl-1
+M.receive({operation='take',identity=si,hook_id=sid})
+assert(s.messages[1].state=='unknown' and s.messages[1].detail=='claimed result lost' and s.messages[1].text==nil,'TTL-expired claimed becomes unknown, not redelivered')
+assert(not M.receive({operation='take',identity=si,hook_id=sid}).message,'no redelivery of the lost message')
+s.transport.last_take=nil;assert(not M.send(s,'never took',{request_id='stale-3'}),'a session that never took is treated as not alive')
 print('PASS message-queue: atomic identity/claim, unknown/no replay, API readiness startup once, metadata separate, end invalidation')

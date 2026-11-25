@@ -32,6 +32,10 @@ test('managed prepare merges only CLI hook settings; no prompt, Channels, permis
   assert(!manifest.includes('token')&&!settings.includes('synthetic-inbox-secret'));assert.equal(JSON.parse(settings).hooks.SessionStart[0].hooks[0].async,true);
   assert.throws(()=>prepare({...o,vendor:'codex'},'codex-cli 0.172.0'));
   assert.throws(()=>prepare(o,'2.1.185'));
+  assert.equal(prepare(o,'2.1.331 (Claude Code)').warning,undefined);
+  assert.match(prepare(o,'2.1.332 (Claude Code)').warning,/^Claude 2\.1\.332: 검증 버전 2\.1\.331보다 높습니다/);
+  assert.throws(()=>prepare({...o,vendor:'codex'},'codex-cli 0.171.9'));
+  assert.throws(()=>prepare(o,'RAW_SECRET_VERSION'),e=>!String(e.message).includes('RAW_SECRET'));
   const id='11111111-1111-4111-8111-111111111111';
   const resumed=prepare({...o,resume:id,cmd:[process.execPath,'--continue']},'2.1.331');
   assert.deepEqual(resumed.cmd.slice(0,3),[process.execPath,'--resume',id]);assert(!resumed.cmd.includes('--session-id'));
@@ -59,4 +63,81 @@ test('Codex prepare owns an explicit new endpoint without starting a process or 
     assert(!JSON.stringify(r).includes('DO_NOT_PERSIST'));assert(!fs.readFileSync(r.manifest,'utf8').includes('DO_NOT_PERSIST'));
     assert.equal(r.cmd,undefined,'TUI command waits for verified server UUID');
   } finally {for(const k of keys)if(previous[k]===undefined)delete process.env[k];else process.env[k]=previous[k];fs.rmSync(dir,{recursive:true,force:true});}
+});
+function hookFixture() {
+  const id='11111111-1111-4111-8111-111111111111',m={vendor:'claude',cli_session:id,cwd:process.cwd(),owner:1,instance:'i',task_id:'t',model:'sonnet',role:'work'};
+  return {id,m,input:{hook_event_name:'SessionStart',session_id:id,cwd:m.cwd,source:'startup',model:'claude-sonnet-4-6'}};
+}
+test('RPC transport failure recreates the RPC and continues polling without resending a body',async()=>{
+  const {id,m,input}=hookFixture();let made=0,takes=0,sends=0;const ops=[];
+  const rpc=child=>{
+    assert.equal(child.CLAUDE_CODE_MESSAGING_TOKEN,undefined);assert.equal(child.CLAUDE_CODE_MESSAGING_SOCKET,undefined);
+    const n=++made;
+    return {request:async r=>{
+      ops.push([n,r.operation]);
+      if(r.operation==='take') {takes++;if(takes===1)throw new Error('timeout');return takes===2?{ok:true,message:{id:'m',text:'body',operation:'message',cli_session:id}}:{ok:false};}
+      return {ok:true};
+    },close(){}};
+  };
+  await runHook(m,input,env,{rpc,retryMs:1,giveUpMs:1000,send:async()=>{sends++;return {state:'unknown',detail:'no receipt'};}});
+  assert.equal(sends,1);assert.equal(takes,3);assert(made>=2);
+  assert.deepEqual(ops.filter(([,o])=>o==='take').map(([n])=>n>=2),[false,true,true],'take after failure uses a new rpc');
+  assert.equal(ops.filter(([,o])=>o==='end').length,1);
+});
+test('result retry treats consumed_or_stale as settled and keeps polling',async()=>{
+  const {id,m,input}=hookFixture();let takes=0;const ops=[];
+  const rpc=()=>({request:async r=>{ops.push(r.operation);
+    if(r.operation==='take')return ++takes===1?{ok:true,message:{id:'m',text:'b',operation:'message',cli_session:id}}:takes===2?{ok:true}:{ok:false};
+    if(r.operation==='result')return {ok:false,code:'consumed_or_stale'};return {ok:true};},close(){}});
+  await runHook(m,input,env,{rpc,retryMs:1,send:async()=>({state:'unknown'})});
+  assert.equal(takes,3,'stale result ack does not end the loop');
+});
+test('continuous RPC failure gives up after giveUpMs and still attempts end once, ignoring its failure',async()=>{
+  const {m,input}=hookFixture();let made=0;const ends=[];
+  const rpc=()=>{made++;return {request:async r=>{if(r.operation==='ready')return {ok:true};if(r.operation==='end')ends.push(1);throw new Error('down');},close(){}};};
+  const started=Date.now();
+  await assert.rejects(runHook(m,input,env,{rpc,retryMs:5,giveUpMs:40}),/down/);
+  assert(Date.now()-started>=40);assert(made>=2);assert.equal(ends.length,1,'one end attempt on a fresh rpc');
+});
+test('an unexpected exception still attempts end with the auth-free environment',async()=>{
+  const {id,m,input}=hookFixture();const ends=[];
+  const rpc=child=>{assert.equal(child.CLAUDE_CODE_MESSAGING_TOKEN,undefined);return {request:async r=>{
+    if(r.operation==='end'){ends.push(r);return {ok:true};}
+    if(r.operation==='take')return {ok:true,message:{id:'m',text:'b',operation:'message',cli_session:'wrong'}};
+    return {ok:true};},close(){}};};
+  await assert.rejects(runHook(m,input,env,{rpc,send:()=>{throw Error('no body');}}));
+  assert.equal(ends.length,1);assert.equal(ends[0].identity.cli_session,id);
+});
+test('SessionStart with source=compact does not send end',async()=>{
+  const {m,input}=hookFixture();const ops=[];
+  const rpc=()=>({request:async r=>{ops.push(r.operation);return {ok:true};},close(){}});
+  await assert.rejects(runHook(m,{...input,source:'compact'},env,{rpc}));
+  assert.equal(ops.includes('end'),false);
+});
+test('rejected ready (duplicate) does not send end',async()=>{
+  const {m,input}=hookFixture();const ops=[];
+  const rpc=()=>({request:async r=>{ops.push(r.operation);return r.operation==='ready'?{ok:false,code:'duplicate'}:{ok:true};},close(){}});
+  await runHook(m,input,env,{rpc});
+  assert.deepEqual(ops,['ready']);
+});
+for (const resume of [false,true]) test(`lost ${resume?'bind-inbox':'ready'} response recovers the same owner`,async()=>{
+  const {m,input}=hookFixture();if(resume){m.resume=true;input.source='resume';delete input.model;}
+  let owner,registrations=0,takes=0;const ops=[];
+  const rpc=()=>({request:async r=>{ops.push(r);if(['ready','bind-inbox'].includes(r.operation)){
+    registrations++;if(!owner){owner=r.hook_id;throw Error('response lost');}
+    return {ok:!!owner&&r.hook_id===owner,code:'duplicate'};
+  } if(r.operation==='take'){takes++;return {ok:false};}return {ok:true};},close(){}});
+  await runHook(m,input,env,{rpc,retryMs:1,giveUpMs:50});
+  assert.equal(registrations,2);assert.equal(takes,1);assert(ops.every(r=>r.hook_id===owner));
+});
+test('registration transport failure never ends an existing owner',async()=>{
+  const {m,input}=hookFixture();const ops=[];
+  const rpc=()=>({request:async r=>{ops.push(r.operation);if(r.operation==='ready')throw Error('down');return {ok:true};},close(){}});
+  await assert.rejects(runHook(m,input,env,{rpc,retryMs:1,giveUpMs:5}),/down/);
+  assert(!ops.includes('end'));
+});
+test('SessionEnd closes the session without claiming a receive loop',async()=>{
+  const {m,input}=hookFixture();const ops=[];
+  await runHook(m,{...input,hook_event_name:'SessionEnd'},env,{rpc:()=>({request:async r=>{ops.push(r);return {ok:true};},close(){}})});
+  assert.deepEqual(ops.map(r=>r.operation),['session-end']);assert.equal(ops[0].hook_id,undefined);
 });

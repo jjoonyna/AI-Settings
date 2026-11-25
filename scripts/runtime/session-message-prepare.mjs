@@ -7,6 +7,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {childEnvironment} from './session-message-rpc.mjs';
 import {codexRecipe} from './session-codex.mjs';
+import {checkVersion,VERIFIED} from './app-proxy.mjs';
 export function prepare(o,version) {
   assert(['claude','codex'].includes(o.vendor));
   assert(['plan','work','review'].includes(o.role)&&typeof o.model==='string'&&o.model.length>0);
@@ -25,7 +26,8 @@ export function prepare(o,version) {
   const cli_session=o.resume;
   if(cli_session)assert(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(cli_session));
   const v=version??spawnSync(o.executable,['--version'],{env:childEnvironment(process.env),encoding:'utf8',stdio:['ignore','pipe','ignore'],windowsHide:true,timeout:5000,maxBuffer:4096}).stdout;
-  assert(o.vendor==='codex'?/^codex-cli 0\.172\.0\s*$/.test(v||''):/\b2\.1\.331\b/.test(v||''),'verified native CLI version is required');
+  const checked=checkVersion(o.vendor,v);
+  const warning=checked.newer?`${o.vendor==='codex'?'Codex':'Claude'} ${checked.version}: 검증 버전 ${VERIFIED[o.vendor]}보다 높습니다. 문제가 있으면 보고하세요`:undefined;
   fs.mkdirSync(o.directory,{recursive:true});const dir=fs.mkdtempSync(path.join(o.directory,'message-'));
   if(o.vendor==='codex') {
     const runtime=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -37,7 +39,7 @@ export function prepare(o,version) {
       server:process.env.NVIM,hub:path.resolve(process.env.AGENT_HUB_HOME)};
     const recipe=codexRecipe(launch,process.env),manifest=path.join(dir,'launch.message.json');
     fs.writeFileSync(manifest,JSON.stringify(launch),{flag:'wx'});
-    return {role:o.role,model:o.model,manifest,server_cmd:[process.execPath,fileURLToPath(new URL('./session-codex.mjs',import.meta.url)),'--serve',manifest],
+    return {...warning&&{warning},role:o.role,model:o.model,manifest,server_cmd:[process.execPath,fileURLToPath(new URL('./session-codex.mjs',import.meta.url)),'--serve',manifest],
       transport:{vendor:'codex',ready:false,endpoint:recipe.endpoint,executable:o.executable,manifest}};
   }
   const manifest=path.join(dir,'launch.message.json'),settings=path.join(dir,'settings.json');
@@ -60,7 +62,7 @@ export function prepare(o,version) {
   const managedMcp=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../claude-mcp.json');
   if(!cmd.includes(managedMcp))cmd.push('--mcp-config',managedMcp);
   cmd.push('--settings',settings);
-  return {cmd,transport:{vendor:o.vendor,expected_cli:m.cli_session,ready:false},role:o.role,model:o.model,manifest};
+  return {...warning&&{warning},cmd,transport:{vendor:o.vendor,expected_cli:m.cli_session,ready:false},role:o.role,model:o.model,manifest};
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try{let raw='';for await(const c of process.stdin){raw+=c;assert(Buffer.byteLength(raw)<=65536);}console.log(JSON.stringify(prepare(JSON.parse(raw))));}

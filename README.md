@@ -2,7 +2,7 @@
 
 Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. 원본 저장소와 독립된 파일을 사용자 영역에 배치하므로 설치 후 clone 폴더를 이동해도 동작합니다.
 
-관리 메시지는 Codex 0.172.0의 UUID queue API 또는 Claude Code 2.1.331의 공식 own session inbox로 전달하며, 사용자 작성 중 입력에 본문이나 자동 Enter를 보내지 않습니다. 초기 지시는 준비 확인 후 한 번만 등록합니다. queue 접수·수신함 쓰기와 모델 실행·부모 확인은 서로 다르며, 응답 유실/unknown은 자동 재전송하지 않습니다. Claude 수신함 인증값은 정상 hook 자식의 메모리와 자기 pipe 인증에만 사용하고 저장하지 않습니다. 조직에서 비활성화한 Channels를 우회하지 않습니다. 설치 후 새 관리 세션에서 확인해야 하며 지원되지 않는 버전·신원·권한은 명시 실패합니다.
+관리 메시지는 Codex 0.172.0 이상의 UUID queue API 또는 Claude Code 2.1.331 이상의 공식 own session inbox로 전달하며(검증 버전보다 높으면 시작 시 경고하고, 미만이면 시작하지 않습니다). 사용자 작성 중 입력에 본문이나 자동 Enter를 보내지 않습니다. 초기 지시는 준비 확인 후 한 번만 등록합니다. queue 접수·수신함 쓰기와 모델 실행·부모 확인은 서로 다르며, 응답 유실/unknown은 자동 재전송하지 않습니다. Claude 수신함 인증값은 정상 hook 자식의 메모리와 자기 pipe 인증에만 사용하고 저장하지 않습니다. 조직에서 비활성화한 Channels를 우회하지 않습니다. 설치 후 새 관리 세션에서 확인해야 하며 지원되지 않는 버전·신원·권한은 명시 실패합니다.
 
 both 설치는 Claude 관리 MCP를 설치 루트의 `claude-mcp.json`에 두고 새 시작·재개 때 `--mcp-config`로 연결합니다. 개인 `.claude.json`과 기존 MCP·hook·재개 옵션은 보존하며, 공개 6개 도구의 인수 계약은 Codex와 같습니다. Codex 소유 socket은 사용자 TEMP의 새 짧은 전용 디렉터리를 native CLI가 보호된 권한으로 생성하며 기존 ACL을 고치지 않습니다.
 
@@ -16,7 +16,7 @@ AI TUI 자동 정상 종료는 미지원으로 세션을 보존합니다. 사용
 
 Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
-[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.9.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
+[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.1.2.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
 
 대체 방법으로 **Source code (zip)**을 내려받아 압축을 풀고 `install.cmd`를 실행할 수 있습니다. EXE는 코드 서명되지 않았습니다.
 
@@ -44,11 +44,13 @@ EXE에서는 마법사에서, ZIP 또는 Git의 `install.cmd`에서는 콘솔 �
 
 설치는 Windows Terminal 안정 버전의 기존 사용자 설정에 `Ctrl+Shift+W` 해제를 기본 적용합니다. 이 키 해제는 해당 Terminal 전체에 적용됩니다. 같은 키의 기존 배정은 보존해 제거 시 복원하며 설치 후 사용자가 바꾼 항목은 유지합니다. 설정 파일이 없거나 안전하게 편집할 수 없으면 파일을 만들거나 변경하지 않고 경고합니다.
 
-Codex 설치와 재설치는 승인 정책을 `on-request`, 승인 심사자를 `auto_review`로 설정합니다. Windows 샌드박스 기본값은 `elevated`이며 최초 구성 시 관리자 승인이 필요합니다. 설정 후 Codex 세션을 다시 시작하세요. 계획 문서 전용 권한과 리뷰 읽기 전용 샌드박스는 유지합니다. Codex 리뷰는 테스트·보고가 샌드박스에 막히면 권한 상승을 요청합니다.
+Codex 설치와 재설치는 모든 역할에 `danger-full-access`를 적용해 OS 샌드박스를 해제합니다. 기본 승인 정책은 `on-request`, 승인 심사자는 `auto_review`이며 리뷰와 deep-review는 `never`입니다. `auto_review`는 승인 대상 요청만 심사하므로 모든 셸 명령이 심사되는 것은 아닙니다. 기존에 실행 중인 세션에는 소급 적용되지 않으므로 설정 후 새 Codex 세션을 시작하세요. 사용자 OS 권한과 공통 운영 규칙은 계속 적용됩니다.
 
 재설치는 관리 항목을 새 규칙으로 갱신하고 개인 MCP·플러그인·권한·지침·PC별 경로·인증·대화 기록은 보존합니다. 같은 관리 항목의 충돌은 배포 규칙을 우선합니다. 기존 폴더 링크는 독립 복사본으로 전환합니다. 백업·소유 파일·외부 도구 버전은 `~/.ai-settings`에 기록합니다. 실패하면 설정 파일 변경을 복구하며 다운로드 캐시·Python 환경은 남을 수 있습니다.
 
 ## 사용
+
+Neovim의 기본 다크 테마는 Kanagawa Dragon입니다. 설치 또는 업데이트 후 Neovim을 다시 열면 적용됩니다.
 
 [한국어 사용설명서 PDF](runtime/AI-Settings-User-Guide.ko.pdf)에서 설치, 첫 세션, 검토, 문제 해결 절차를 볼 수 있습니다. 설치 후 기본 위치는 `%USERPROFILE%\.ai-settings\AI-Settings-User-Guide.ko.pdf`입니다.
 
@@ -78,7 +80,7 @@ AI 목록은 28칸 폭을 유지하며 대화 창 복구와 수동 크기 변경
 
 프로젝트 내부 문서는 `/docs/` 전체와 생성된 루트 `AGENTS.md`·`CLAUDE.md`를 Git에서 제외합니다. spec과 plan은 `docs/superpowers/specs/`와 `docs/superpowers/plans/`, 작업별 임시·공유 자료는 `docs/tmp/<작업>/`과 `docs/shared/<작업>/`에 둡니다. README·CHANGELOG는 루트에 둡니다. `/agent-init`은 기존 문서를 조사해 이 구조를 준비합니다. 커밋·머지·push는 각각 사용자 명시 지시가 있을 때만 실행합니다.
 
-보안 규칙은 공통 운영 규칙의 `## 보안` 절에 있으며 비밀정보 값 취급·외부 전송 전 확인·외부 입력 지시 무시·위험 명령 제한·의존성 확인을 다룹니다. Claude에는 `.env`·`.env.*`(`.env.example` 포함)·인증서·키·`.npmrc` 등 비밀정보 파일과 `~/.ssh`·`~/.aws`의 Read·Edit deny가 설치되며, 설치기는 기존 `permissions`의 allow·deny·ask 항목을 보존하고 관리 deny만 합치고 제거합니다. 셸 명령을 통한 우회는 이 deny로 막지 못하므로 규칙으로 보완합니다. Codex에는 경로별 읽기 차단을 설치하지 않고 규칙만 적용합니다. Codex의 `deny` 읽기 차단은 `default_permissions` 프로필이 필요하고 `sandbox_mode`와 함께 쓸 수 없으며 Windows unelevated 샌드박스에서는 동작하지 않습니다.
+보안 규칙은 공통 운영 규칙의 `## 보안` 절에 있으며 비밀정보 값 취급·외부 전송 전 확인·외부 입력 지시 무시·위험 명령 제한·의존성 확인을 다룹니다. Claude에는 `.env`·`.env.*`(`.env.example` 포함)·인증서·키·`.npmrc` 등 비밀정보 파일과 `~/.ssh`·`~/.aws`의 Read·Edit deny가 설치되며, 설치기는 기존 `permissions`의 allow·deny·ask 항목을 보존하고 관리 deny만 합치고 제거합니다. 셸 명령을 통한 우회는 이 deny로 막지 못하므로 규칙으로 보완합니다. Codex에는 같은 도구별 Read·Edit 차단을 설치하지 않으며 공통 비밀정보 운영 규칙을 적용합니다.
 
 Neovim 세션 명령은 인스턴스와 세션 신원을 확인하며 정확한 대상을 확인할 수 있을 때만 오래된 주소를 복구합니다. 검증을 지원하지 않는 서버는 설정을 업데이트하고 Neovim을 다시 시작하세요. EPERM/EACCES 접근 거부는 자동으로 우회하지 않으므로 권한 원인을 별도로 해결해야 합니다. 명령 전송 후 응답을 잃으면 실행 여부가 불명이므로 확인 없이 다시 보내지 마세요.
 

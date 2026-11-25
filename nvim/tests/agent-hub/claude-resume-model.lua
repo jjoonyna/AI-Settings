@@ -8,15 +8,15 @@ M.flush_startup=function(e)assert(e.transport.ready and e.transport.model_verifi
 local function fixture(owner)
  local e={id=owner,task_id='task'..owner,agent='Claude',role='plan',model='opus',cli_session=id,event_token='token'..owner,transport={vendor='claude',expected_cli=id,ready=false}};T.registry[owner]=e
  local i={instance=H.id,owner=owner,task_id=e.task_id,vendor='claude',cli_session=id,token=e.event_token}
- local function call(op,model)return M.receive({operation=op,identity=i,role='plan',model=model})end
+ local function call(op,model)return M.receive({operation=op,identity=i,role='plan',model=model,hook_id=id})end
  return e,call,i
 end
 for index,order in ipairs({{'bind-inbox','model-attest'},{'model-attest','bind-inbox'}})do
- local e,call=fixture(index);assert(call(order[1],order[1]=='model-attest' and 'opus' or nil).ok);assert(not e.transport.ready and not e.transport.ready_claimed)
+ local e,call,identity=fixture(index);assert(call(order[1],order[1]=='model-attest' and 'opus' or nil).ok);assert(not e.transport.ready and not e.transport.ready_claimed)
  assert(not M.send(e,'forbidden'))
  if order[1]=='bind-inbox' then assert(call('take').ok and not call('take').message)end
  assert(call(order[2],order[2]=='model-attest' and 'opus' or nil).ok);assert(e.transport.ready and e.transport.ready_claimed and e.transport.model_verified)
- local before=sent;assert(call('model-attest','opus').ok and sent==before);assert(not call('bind-inbox').ok)
+ local before=sent;assert(call('model-attest','opus').ok and sent==before);assert(not M.receive({operation='bind-inbox',identity=identity,role='plan',hook_id='22222222-2222-4222-8222-222222222222'}).ok)
  assert(not call('model-attest','haiku').ok);assert(not e.transport.ready);assert(not call('model-attest','opus').ok)
 end
 local e,call,i=fixture(9);assert(call('bind-inbox').ok);assert(call('end').ok);assert(not call('model-attest','opus').ok)

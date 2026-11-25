@@ -19,7 +19,7 @@ function clientMessage(bytes) {
   const mask=bytes.subarray(offset,offset+4),payload=Buffer.from(bytes.subarray(offset+4,offset+4+length));
   for(let i=0;i<payload.length;i++)payload[i]^=mask[i%4];return JSON.parse(payload.toString());
 }
-function fixture(failure,cleanup='normal') {
+function fixture(failure,cleanup='normal',userAgent) {
   const state={spawns:0,ends:0,unrefs:0,destroys:0};
   const child=new EventEmitter();child.pid=failure==='spawn-async'?undefined:12345;
   child.stdout=new EventEmitter();child.stderr=new EventEmitter();child.stdin=new EventEmitter();
@@ -31,7 +31,7 @@ function fixture(failure,cleanup='normal') {
     if(failure==='initialize-timeout')return;
     if(failure==='parser-initialize')return send(serverFrame('RAW_SECRET_NOT_JSON'));
     const result=failure==='initialize-reject'?{error:{code:-32603,message:'RAW_SECRET_REMOTE'}}
-      :{result:{userAgent:failure==='version'?'RAW_SECRET_VERSION':'codex/0.172.0'}};
+      :{result:{userAgent:userAgent??(failure==='version'?'RAW_SECRET_VERSION':failure==='newer'?'codex/0.173.0':failure==='older'?'codex/0.171.9':'codex/0.172.0')}};
     send(serverFrame(JSON.stringify({id:message.id,...result})));
   }
   child.stdin.write=value=>{
@@ -102,7 +102,7 @@ test('bound factory acquisition failure preserves cleanup after the initial boot
   const id='11111111-1111-4111-8111-111111111111';
   const o={directory,role:'work',model:'gpt-6.1-sol',cwd:process.cwd()};
   fs.writeFileSync(path.join(directory,'launch.message.json'),JSON.stringify(o));
-  const initial={close:async()=>{closed++;return {exit:{code:0}};},request:async()=>({thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}})};
+  const initial={close:async()=>{closed++;return {exit:{code:0}};},request:async()=>({thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}})};
   try {
     const out=await inspectCodex(o,{request:{config:{'mcp_servers.ai_settings_sessions':{env:{}}}}},'--initialize',async()=>++opened===1?initial:connectNative(options,f.dependencies));
     assert.equal(out.code,1);assert.equal(out.result.mcp_verified,undefined);assert.equal(closed,1);assert.equal(opened,2);
@@ -112,8 +112,32 @@ test('bound factory acquisition failure preserves cleanup after the initial boot
     assert.equal(f.state.ends,1);assert.equal(f.state.spawns,1);
   } finally {fs.rmSync(directory,{recursive:true,force:true});}
 });
+test('native handshake accepts newer Codex with its real version and rejects older',async()=>{
+  const f=fixture('newer'),client=await connectNative(options,f.dependencies);
+  assert.equal(client.version,'0.173.0');await client.close();
+  await assert.rejects(connectNative(options,fixture('older').dependencies),e=>e.diagnostic?.phase==='version');
+});
 test('normal native handshake/initialize and once-only close keep the protocol unchanged',async()=>{
   const f=fixture('normal'),client=await connectNative(options,f.dependencies);
   assert.equal(client.version,'0.172.0');const a=client.close(),b=client.close();assert.equal(a,b);
   assert.deepEqual((await a).exit,{code:0,signal:null});assert.equal(f.state.ends,1);assert.equal(f.state.unrefs,1);
+});
+
+test('native version accepts the actual client product and preserves version rejection',async()=>{
+  for(const [userAgent,version] of [
+    ['ai-settings-host-capability/0.172.0','0.172.0'],
+    ['ai-settings-host-capability/0.172.0 (Windows 10.0; x86_64)','0.172.0'],
+    ['ai-settings-host-capability/0.173.0','0.173.0'],
+    ['codex-tui/0.172.0','0.172.0'],
+  ]) {
+    const f=fixture('normal','normal',userAgent),client=await connectNative(options,f.dependencies);
+    try {assert.equal(client.version,version);}finally{await client.close();}
+    assert.equal(f.state.ends,1);
+  }
+  for(const userAgent of ['ai-settings-host-capability/0.171.9','ai-settings-host-capability/garbage',
+    'unexpected/0.172.0','unexpected-codex/0.172.0','prefix ai-settings-host-capability/0.172.0']) {
+    const f=fixture('normal','normal',userAgent);
+    await assert.rejects(connectNative(options,f.dependencies),e=>e.diagnostic?.phase==='version');
+    assert.equal(f.state.ends,1);
+  }
 });

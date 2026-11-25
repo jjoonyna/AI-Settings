@@ -16,9 +16,9 @@ if(state.attempts<=(control.notReady||0)||(control.failOnAttempts||[]).includes(
     if(m.method==='thread/start'||(m.method==='thread/resume'&&m.params.config))s.mcp=m.params.config['mcp_servers.ai_settings_sessions'].env;
     fs.writeFileSync(stateFile,JSON.stringify(s));
     let result;
-    if(m.method==='initialize')result={userAgent:control.badVersion?'codex/0.0.0':'codex/0.172.0'};
+    if(m.method==='initialize')result={userAgent:m.params.clientInfo.name+'/'+(control.badVersion?'0.0.0':'0.172.0')};
     else if(m.method==='thread/name/set')result={};
-    else if(m.method==='thread/start'||m.method==='thread/resume')result={thread:{id:control.id},model:'gpt-6.1-sol',cwd:control.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}};
+    else if(m.method==='thread/start'||m.method==='thread/resume')result={thread:{id:control.id},model:'gpt-6.1-sol',cwd:control.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}};
     else if(m.method==='mcpServerStatus/list') {
       const env={...process.env,...s.mcp};for(const k of ['CODEX_THREAD_ID','CODEX_SESSION_ID','AI_SETTINGS_MCP_THREAD_ID'])delete env[k];
       const input=[{id:1,method:'initialize',params:{protocolVersion:'2025-03-26'}},{method:'notifications/initialized'},{id:2,method:'tools/list'}].map(v=>JSON.stringify({jsonrpc:'2.0',...v})).join('\n')+'\n';

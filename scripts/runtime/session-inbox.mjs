@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import net from 'node:net';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {messageRpc,childEnvironment} from './session-message-rpc.mjs';
 function ownCredentials(env) {
@@ -45,22 +46,45 @@ export async function runHook(m,input,env=process.env,dependencies={}) {
     if(input.model===undefined)assert(input.source==='resume'&&m.resume===true,'actual resume capability required');
     else assert(/^(?:claude-)?(opus|sonnet|haiku|fable)(?:-|$)/.exec(input.model||'')?.[1]===m.model,'actual hook model mismatch');
   }
-  const rpc=(dependencies.rpc||messageRpc)(childEnvironment(env));
+  const make=()=>(dependencies.rpc||messageRpc)(childEnvironment(env));
+  const retryMs=dependencies.retryMs??1000,giveUpMs=dependencies.giveUpMs??60000;
+  let rpc=make(),failedAt=0,broken=false;
+  // Transport failures only recreate the RPC connection; a message body is never resent.
+  const request=async op=>{
+    for(;;) {
+      try {const r=await rpc.request(op);failedAt=0;broken=false;return r;}
+      catch(error) {
+        const now=Date.now();broken=true;if(!failedAt)failedAt=now;
+        if(now-failedAt>=giveUpMs)throw error;
+        try{rpc.close();}catch{}
+        await new Promise(resolve=>setTimeout(resolve,retryMs));rpc=make();
+      }
+    }
+  };
+  let owns=false;const hook_id=randomUUID();
   try {
-    if(input.hook_event_name==='SessionEnd') {await rpc.request({operation:'end',identity});return;}
+    if(input.hook_event_name==='SessionEnd') {await request({operation:'session-end',identity});return;}
     assert(['startup','resume'].includes(input.source));
-    const ready=await rpc.request({operation:input.model===undefined?'bind-inbox':'ready',identity,role:m.role,...(input.model!==undefined?{model:m.model}:{})});if(!ready?.ok)return;
+    const ready=await request({operation:input.model===undefined?'bind-inbox':'ready',identity,hook_id,role:m.role,...(input.model!==undefined?{model:m.model}:{})});if(!ready?.ok)return;
+    owns=true;
     const deadline=Date.now()+8*60*60*1000;
     while(Date.now()<deadline) {
-      const next=await rpc.request({operation:'take',identity});if(!next?.ok)break;
+      const next=await request({operation:'take',identity,hook_id});if(!next?.ok)break;
       if(next.message) {
         assert(next.message.operation==='message'&&next.message.cli_session===m.cli_session);
         let result;try{result=await(dependencies.send||sendInbox)(next.message.text,env);}catch{result={state:'failed',detail:'own-inbox-unavailable'};}
-        const ack=await rpc.request({operation:'result',identity,message_id:next.message.id,...result});if(!ack?.ok)break;
+        const ack=await request({operation:'result',identity,hook_id,message_id:next.message.id,...result});
+        if(!ack?.ok&&ack?.code!=='consumed_or_stale')break;
       } else await new Promise(resolve=>setTimeout(resolve,500));
     }
-    await rpc.request({operation:'end',identity});
-  } finally {rpc.close();}
+  } finally {
+    // End is attempted once on any exit of the loop owner (not for compact/duplicate hooks); a connection that failed is replaced, errors are ignored.
+    if(owns) try {
+      if(broken){try{rpc.close();}catch{}rpc=make();}
+      await rpc.request({operation:'end',identity,hook_id});
+    } catch {}
+    try{rpc.close();}catch{}
+  }
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try {

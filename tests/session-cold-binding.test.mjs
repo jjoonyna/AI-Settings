@@ -14,7 +14,7 @@ function fixture({resume,name='작업 | persistence',nameFails=false,closeFails=
   fs.writeFileSync(path.join(directory,'launch.message.json'),JSON.stringify(o));
   const recipe=codexRecipe(o,{NVIM:o.server,AGENT_HUB_HOME:o.hub,AGENT_EVENT_INSTANCE:o.instance,AGENT_SESSION_ID:'4',AGENT_TASK_ID:o.task_id});
   const events=[];let persisted=!!resume,opens=0;
-  const response=()=>({thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}});
+  const response=()=>({thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}});
   const client=label=>({async close(){events.push(label+':close');return {exit:closeFails&&label==='bootstrap'?{pending:true}:{code:0,signal:null}};},async request(method,params){
     events.push(label+':'+method);
     if(method==='thread/start')return response();
@@ -35,7 +35,7 @@ test('fresh thread persists its exact requested title before normal close and bo
 test('native TUI keeps policy on the owned server and uses no unsupported remote overrides',()=>{
   const f=fixture();try {
     const recipe=codexRecipe(f.o,{NVIM:f.o.server,AGENT_HUB_HOME:f.o.hub,AGENT_EVENT_INSTANCE:f.o.instance,AGENT_SESSION_ID:'4',AGENT_TASK_ID:f.o.task_id});
-    const args=recipe.tuiArgs(id);assert(!args.includes('-c'));assert.equal(recipe.request.config.sandbox_mode,'workspace-write');
+    const args=recipe.tuiArgs(id);assert(!args.includes('-c'));assert.equal(recipe.request.config.sandbox_mode,'danger-full-access');
     assert.equal(recipe.request.config.approval_policy,'on-request');assert.equal(args[args.indexOf('--remote')+1],recipe.endpoint);
     assert.deepEqual(args.slice(-2),['resume',id]);assert(!JSON.stringify(args).includes('AGENT_EVENT_TOKEN'));
   }finally{f.clean();}
@@ -56,6 +56,9 @@ test('requested launcher title survives prepare into the internal Codex launch m
   try {
     Object.assign(process.env,values);const p=prepare({...f.o,vendor:'codex',cmd:['codex']},'codex-cli 0.172.0');
     assert.equal(JSON.parse(fs.readFileSync(p.manifest)).name,f.o.name);assert.equal(p.transport.ready,false);
+    assert.equal(p.warning,undefined);
+    const n=prepare({...f.o,vendor:'codex',cmd:['codex']},'codex-cli 0.173.0');assert.match(n.warning,/^Codex 0\.173\.0: 검증 버전 0\.172\.0보다 높습니다/);
+    assert.throws(()=>prepare({...f.o,vendor:'codex',cmd:['codex']},'codex-cli 0.171.9'));
   }finally{for(const [k,v]of Object.entries(previous))if(v===undefined)delete process.env[k];else process.env[k]=v;f.clean();}
 });
 test('linked Codex executable is pinned to its real binary in the launch manifest',()=>{

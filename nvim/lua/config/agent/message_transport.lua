@@ -1,5 +1,5 @@
 -- Management messages use API/inbox workers. No terminal input or screen inspection.
-local M = { max_bytes = 256 * 1024, max_pending = 16, ttl = 120 }
+local M = { max_bytes = 256 * 1024, max_pending = 16, ttl = 120, inbox_stale = 30 }
 local function uuid(s) return type(s)=='string' and s:match('^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$') end
 local function vendor(e) return e.agent=='Codex' and 'codex' or e.agent=='Claude' and 'claude' end
 local function current(e,q)
@@ -61,6 +61,9 @@ end
 local function submit(e,text,opts,operation)
   if not valid(e) or e.exit_code~=nil or not require('config.agent.handoff').verified_role(e) then return false,'검증된 UUID/역할/API 또는 수신함 준비가 필요합니다' end
   if type(text)~='string' or #text==0 or #text>M.max_bytes or text:find('%z') then return false,'메시지 크기/형식 오류' end
+  if vendor(e)=='claude' and os.time()-(e.transport.last_take or 0)>M.inbox_stale then
+    return false,'부모 수신함 응답 없음('..M.inbox_stale..'초): 보고는 저장됨, 자동 재전송 없음'
+  end
   local sender
   if opts and opts.sender then
     local source=require('config.agent.terminal').registry[opts.sender.owner]
@@ -149,6 +152,7 @@ function M.prepare(opts,env)
   local ok,value=pcall(vim.json.decode,result.stdout or '')
   if result.code~=0 or not ok or not value.transport then return nil,'관리 transport 시작 미지원: 역할/모델/버전과 Codex 소유 서버 lifecycle을 확인하세요' end
   env.AGENT_SESSION_ROLE,env.AGENT_SESSION_MODEL=role,model
+  if type(value.warning)=='string' then vim.schedule(function()vim.notify(value.warning,vim.log.levels.WARN)end) end
   if opts.agent=='Codex' then
     local server={buf=vim.api.nvim_create_buf(false,true)}
     value.transport.server=server
@@ -218,7 +222,7 @@ local function promote_claude(e)
   if not t.inbox_bound or not t.model_verified or t.ready_claimed then return end
   local role,ok=require('config.agent.handoff').save_role(e,e.role)
   if not ok or role~=e.role then close_claude(e,'role mismatch');return end
-  t.ready_claimed=true;t.cli_session=e.cli_session;t.ready=true;M.flush_startup(e)
+  t.ready_claimed=true;t.cli_session=e.cli_session;t.ready=true;t.last_take=os.time();M.flush_startup(e)
 end
 function M.receive(o)
   local e=authenticate(o);if not e then return {ok=false,code='identity'} end
@@ -226,7 +230,15 @@ function M.receive(o)
     local t=e.transport
     if o.identity.cli_session~=t.expected_cli or o.identity.cli_session~=e.cli_session then return {ok=false,code='identity'} end
     if t.model_failed then return {ok=false,code='ended_or_model_failed'} end
-    if o.operation=='end' then close_claude(e,'session ended');return {ok=true} end
+    if o.operation=='session-end' then close_claude(e,'session ended');return {ok=true} end
+    if o.operation=='ready' or o.operation=='bind-inbox' then
+      if not uuid(o.hook_id) then return {ok=false,code='hook_identity'} end
+      if t.inbox_bound and t.hook_id~=o.hook_id then return {ok=false,code='duplicate'} end
+    elseif o.operation=='take' or o.operation=='result' or o.operation=='end' then
+      if not t.inbox_bound or not uuid(o.hook_id) or t.hook_id~=o.hook_id then return {ok=false,code='hook_identity'} end
+      if o.operation=='end' then close_claude(e,'session ended');return {ok=true} end
+    end
+    if o.operation=='take' then t.last_take=os.time() end
     if o.operation=='bind-inbox' or o.operation=='model-attest' or o.operation=='ready' then
       if o.role~=e.role or not require('config.agent.handoff').verified_role(e) then close_claude(e,'role mismatch');return {ok=false,code='role'} end
       if o.operation~='bind-inbox' and o.model~=e.model then close_claude(e,'model mismatch');return {ok=false,code='model'} end
@@ -241,8 +253,7 @@ function M.receive(o)
       if not t.ready and os.time()-t.model_wait_started>M.ttl then close_claude(e,'model timeout');return {ok=false,code='model_timeout'} end
       if o.operation=='model-attest' then t.model_verified=true
       else
-        if t.inbox_bound then return {ok=false,code='duplicate'} end
-        t.inbox_bound=true;if o.operation=='ready' then t.model_verified=true end
+        t.inbox_bound=true;t.hook_id=o.hook_id;if o.operation=='ready' then t.model_verified=true end
       end
       promote_claude(e);return {ok=not t.model_failed}
     end
@@ -270,7 +281,9 @@ function M.receive(o)
   end
   if o.operation=='take' and vendor(e)=='claude' then
     for _,q in ipairs(queue(e)) do
-      if q.state=='pending' then
+      if q.state=='claimed' and os.time()-q.created>M.ttl then
+        settle(e,q,{state='unknown',detail='claimed result lost'})
+      elseif q.state=='pending' then
         if not current(e,q) or os.time()-q.created>M.ttl then
           q.state='failed';q.text=nil;vim.notify('관리 메시지 '..q.id..' 만료/신원 변경: 자동 재전송 없음',vim.log.levels.WARN)
         elseif not require('config.agent.handoff').verified_role(e) then return {ok=false,code='role'}
