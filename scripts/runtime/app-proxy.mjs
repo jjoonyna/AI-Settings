@@ -4,11 +4,11 @@ import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 
 const MAX = 16 * 1024 * 1024;
-function version(value) {
-  const match = /^(?:codex(?:-cli)?\s+)?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?\s*$/.exec(value);
+export function version(value) {
+  const match = /^(?:codex(?:-cli)?\s+)?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?(?:\s+\(Claude Code\))?\s*$/.exec(value);
   return match && { numbers: match.slice(1, 4).map(Number), prerelease: match[4]?.split('.') };
 }
-function compare(a, b) {
+export function compare(a, b) {
   for (let i = 0; i < 3; i++) if (a.numbers[i] !== b.numbers[i]) return a.numbers[i] - b.numbers[i];
   if (!a.prerelease || !b.prerelease) return Number(!a.prerelease) - Number(!b.prerelease);
   for (let i = 0; i < Math.max(a.prerelease.length, b.prerelease.length); i++) {
@@ -19,6 +19,13 @@ function compare(a, b) {
     return xn && yn ? Number(x) - Number(y) : xn !== yn ? (xn ? -1 : 1) : x < y ? -1 : 1;
   }
   return 0;
+}
+export const VERIFIED = { claude: '2.1.331', codex: '0.172.0' };
+// Throws unless raw parses as a version >= the verified minimum; never echoes raw.
+export function checkVersion(vendor, raw) {
+  const found = version(String(raw ?? ''));
+  if (!found || compare(found, version(VERIFIED[vendor])) < 0) throw new Error('minimum native CLI version is required');
+  return { version: found.numbers.join('.') + (found.prerelease ? '-' + found.prerelease.join('.') : ''), newer: compare(found, version(VERIFIED[vendor])) > 0 };
 }
 export function executable(env = process.env, platform = process.platform, run = execFileSync) {
   if (platform === 'win32' && env.LOCALAPPDATA && path.isAbsolute(env.LOCALAPPDATA)) {

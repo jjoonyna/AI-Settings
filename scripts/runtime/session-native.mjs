@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {spawn} from 'node:child_process';
-import {frame,Frames} from './app-proxy.mjs';
+import {frame,Frames,checkVersion} from './app-proxy.mjs';
 export class ProxyCleanupError extends Error {
   constructor(proxy,state,code) {
     super(`MCP ${proxy} proxy close incomplete`);
@@ -173,11 +173,11 @@ export async function connectNative(options,dependencies={}) {
     phase='initialize';
     const init=await request('initialize',{clientInfo:{name:'ai-settings-host-capability',version:'0.1.0'},capabilities:{experimentalApi:true}});
     phase='version';
-    assert(/\/0\.172\.0(?:\s|$)/.test(init?.userAgent||''),'unexpected server version');
+    const checked=checkVersion('codex',/codex[^/]*\/(\S+)/.exec(init?.userAgent||'')?.[1]);
     phase='initialize';
     child.stdin.write(frame(JSON.stringify({method:'initialized',params:{}})));
     phase='ready';
-    return {request,close,version:'0.172.0'};
+    return {request,close,version:checked.version};
   } catch(error) {
     let primary=firstFailure||(error instanceof NativeConnectError?error:new NativeConnectError(phase,
       phase==='version'?'mismatch':error?.code==='ETIMEDOUT'?'timeout':phase==='handshake'?'write-failed':'rejected'));

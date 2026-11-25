@@ -7,7 +7,7 @@ description: 계획·작업·읽기 전용 리뷰를 연결하고 모델 선택,
 
 both 설치의 Claude 새 시작·재개도 설치 루트 `claude-mcp.json`을 `--mcp-config`로 불러 같은 6개 도구를 사용한다. 개인 MCP·hook과 기존 재개 인수를 보존하고, Claude→Codex 교차 위임은 신선한 유효 사용률 80% 이상일 때 리뷰에만 허용한다. Codex→Claude와 상위 모델 위임은 거부한다.
 
-관리 본문은 Codex 0.172.0 UUID queue API 또는 Claude 2.1.331 공식 own session inbox만 사용한다. 초기 지시는 준비 후 한 번 등록하며 PTY 본문·자동 Enter를 보내지 않는다. queue 접수와 모델 실행·부모 확인은 구분한다. 응답 유실/unknown·만료·중복·신원 변경이면 자동 재전송하지 않는다. Channels 조직 비활성화를 우회하지 않고 Claude 인증값은 정상 hook 자식 메모리와 자기 pipe 인증에만 둔다. TUI 자동 종료 미지원은 명시 실패하고 보존한다. exFAT의 권한 설정은 OS 쓰기 차단 보장이 아니며 기존 역할별 운영 규칙과 MCP 경계는 유지한다.
+관리 본문은 Codex 0.172.0 이상 UUID queue API 또는 Claude 2.1.331 이상 공식 own session inbox만 사용한다(검증 버전보다 높으면 경고, 미만이면 거부). 초기 지시는 준비 후 한 번 등록하며 PTY 본문·자동 Enter를 보내지 않는다. queue 접수와 모델 실행·부모 확인은 구분한다. 응답 유실/unknown·만료·중복·신원 변경이면 자동 재전송하지 않는다. Channels 조직 비활성화를 우회하지 않고 Claude 인증값은 정상 hook 자식 메모리와 자기 pipe 인증에만 둔다. TUI 자동 종료 미지원은 명시 실패하고 보존한다. exFAT의 권한 설정은 OS 쓰기 차단 보장이 아니며 기존 역할별 운영 규칙과 MCP 경계는 유지한다.
 
 Codex·Claude/Neovim에서는 설치가 자동 등록한 `ai_settings_sessions` MCP를 우선 사용한다. 먼저 `connection_status({})`로 실제 신원·역할·모델을 확인한다. 계획은 `handoff({request:{agent:선택벤더,session:'work' 또는 'review',model:선택모델,name:작업제목,goal:목표,scope:담당범위,validation:검증기준,prompt:핵심지시,spec_doc:spec경로,plan_doc:plan경로}})`, `preview({path:검토문서})`, `session_status({owner:자식번호,task_id:정확한작업ID})`, `task_complete({owner:자식번호,task_id:정확한작업ID,verified:true,reviewed:true})`를 사용한다. 부모 모델·서버·CLI ID는 도구가 검증해 결정한다. 경로는 현재 프로젝트 docs 내부 실제 Markdown이고 위임 작업 폴더는 현재 프로젝트다. 작업·리뷰는 `report({text:보고본문})`로 실제 부모에게 보고하고 OK를 확인하며 자기 `session_status`만 조회한다. 보고/프로세스 종료를 완료로 간주하지 않는다.
 

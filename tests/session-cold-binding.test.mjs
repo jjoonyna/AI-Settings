@@ -56,6 +56,9 @@ test('requested launcher title survives prepare into the internal Codex launch m
   try {
     Object.assign(process.env,values);const p=prepare({...f.o,vendor:'codex',cmd:['codex']},'codex-cli 0.172.0');
     assert.equal(JSON.parse(fs.readFileSync(p.manifest)).name,f.o.name);assert.equal(p.transport.ready,false);
+    assert.equal(p.warning,undefined);
+    const n=prepare({...f.o,vendor:'codex',cmd:['codex']},'codex-cli 0.173.0');assert.match(n.warning,/^Codex 0\.173\.0: 검증 버전 0\.172\.0보다 높습니다/);
+    assert.throws(()=>prepare({...f.o,vendor:'codex',cmd:['codex']},'codex-cli 0.171.9'));
   }finally{for(const [k,v]of Object.entries(previous))if(v===undefined)delete process.env[k];else process.env[k]=v;f.clean();}
 });
 test('linked Codex executable is pinned to its real binary in the launch manifest',()=>{

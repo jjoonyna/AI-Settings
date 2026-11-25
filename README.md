@@ -2,7 +2,7 @@
 
 Windows에서 Claude Code·Codex CLI·Neovim 작업 환경을 설치합니다. 원본 저장소와 독립된 파일을 사용자 영역에 배치하므로 설치 후 clone 폴더를 이동해도 동작합니다.
 
-관리 메시지는 Codex 0.172.0의 UUID queue API 또는 Claude Code 2.1.331의 공식 own session inbox로 전달하며, 사용자 작성 중 입력에 본문이나 자동 Enter를 보내지 않습니다. 초기 지시는 준비 확인 후 한 번만 등록합니다. queue 접수·수신함 쓰기와 모델 실행·부모 확인은 서로 다르며, 응답 유실/unknown은 자동 재전송하지 않습니다. Claude 수신함 인증값은 정상 hook 자식의 메모리와 자기 pipe 인증에만 사용하고 저장하지 않습니다. 조직에서 비활성화한 Channels를 우회하지 않습니다. 설치 후 새 관리 세션에서 확인해야 하며 지원되지 않는 버전·신원·권한은 명시 실패합니다.
+관리 메시지는 Codex 0.172.0 이상의 UUID queue API 또는 Claude Code 2.1.331 이상의 공식 own session inbox로 전달하며(검증 버전보다 높으면 시작 시 경고하고, 미만이면 시작하지 않습니다). 사용자 작성 중 입력에 본문이나 자동 Enter를 보내지 않습니다. 초기 지시는 준비 확인 후 한 번만 등록합니다. queue 접수·수신함 쓰기와 모델 실행·부모 확인은 서로 다르며, 응답 유실/unknown은 자동 재전송하지 않습니다. Claude 수신함 인증값은 정상 hook 자식의 메모리와 자기 pipe 인증에만 사용하고 저장하지 않습니다. 조직에서 비활성화한 Channels를 우회하지 않습니다. 설치 후 새 관리 세션에서 확인해야 하며 지원되지 않는 버전·신원·권한은 명시 실패합니다.
 
 both 설치는 Claude 관리 MCP를 설치 루트의 `claude-mcp.json`에 두고 새 시작·재개 때 `--mcp-config`로 연결합니다. 개인 `.claude.json`과 기존 MCP·hook·재개 옵션은 보존하며, 공개 6개 도구의 인수 계약은 Codex와 같습니다. Codex 소유 socket은 사용자 TEMP의 새 짧은 전용 디렉터리를 native CLI가 보호된 권한으로 생성하며 기존 ACL을 고치지 않습니다.
 

@@ -2,7 +2,7 @@
 
 Catppuccin Mocha 테마와 여러 에이전트를 관리하는 공통 작업 목록을 사용한다.
 
-초기/후속 지시·보고·검토 응답은 Codex 0.172.0 UUID queue API 또는 Claude 2.1.331 own session inbox로 전달한다. 사용자 입력·커서를 읽어 제출 여부를 추정하지 않으며 관리 본문/자동 Enter를 PTY에 보내지 않는다. 새 시작·선택/최근 재개는 정확한 역할·모델·UUID를 확인한다. 크기·TTL·중복·포화·신원 변경을 검사하며 응답 유실은 unknown으로 보존하고 자동 재전송하지 않는다. queue 접수나 수신함 쓰기는 모델 실행·부모 확인이 아니다. Codex 이름은 metadata API로 바꾸고 AI TUI 자동 종료는 미지원으로 보존한다. TUI 정상 종료 후 전용 hidden ConPTY 서버 채널에만 정상 interrupt를 한 번 보내며 강제 종료하지 않는다. 종료는 정확한 wrapper/native child PID·exit0·signal 부재로 확인하며 보호된 socket의 파일 삭제 여부는 미확인이다. stat false는 연결 불가나 삭제 증거가 아니다. exFAT의 OS 쓰기 차단 한계와 기존 역할·MCP 경계는 별개다.
+초기/후속 지시·보고·검토 응답은 Codex 0.172.0 이상 UUID queue API 또는 Claude 2.1.331 이상 own session inbox로 전달한다(검증 버전보다 높으면 시작 시 경고, 미만이면 시작 거부). 사용자 입력·커서를 읽어 제출 여부를 추정하지 않으며 관리 본문/자동 Enter를 PTY에 보내지 않는다. 새 시작·선택/최근 재개는 정확한 역할·모델·UUID를 확인한다. 크기·TTL·중복·포화·신원 변경을 검사하며 응답 유실은 unknown으로 보존하고 자동 재전송하지 않는다. queue 접수나 수신함 쓰기는 모델 실행·부모 확인이 아니다. Codex 이름은 metadata API로 바꾸고 AI TUI 자동 종료는 미지원으로 보존한다. TUI 정상 종료 후 전용 hidden ConPTY 서버 채널에만 정상 interrupt를 한 번 보내며 강제 종료하지 않는다. 종료는 정확한 wrapper/native child PID·exit0·signal 부재로 확인하며 보호된 socket의 파일 삭제 여부는 미확인이다. stat false는 연결 불가나 삭제 증거가 아니다. exFAT의 OS 쓰기 차단 한계와 기존 역할·MCP 경계는 별개다.
 
 ## 입력과 창 이동
 

@@ -63,5 +63,11 @@ local blocked=root..'/blocked';vim.fn.mkdir(blocked..'/bin','p');vim.fn.writefil
 -- Keep the prepare stub on the original runtime, but make the real role API fail its write.
 local install_calls=0;P.installation=function()install_calls=install_calls+1;return {runtime=install_calls==1 and root or blocked,mode='both'}end
 new_id();assert(not prepare(),'role store failure must stop before launch')
+-- A newer-than-verified CLI warning is surfaced once as WARN without blocking the launch.
+local notified={};local notify=vim.notify;vim.notify=function(msg,level)notified[#notified+1]={msg,level}end
+P.installation=function()return {runtime=root,mode='both'}end
+response_patch=function(v)v.warning='Claude 9.9.9: warn-test'end
+new_id();assert(prepare(),'newer CLI must still launch');vim.wait(200,function()return #notified>0 end)
+assert(#notified==1 and notified[1][1]=='Claude 9.9.9: warn-test' and notified[1][2]==vim.log.levels.WARN,'one WARN notify');vim.notify=notify;response_patch=nil
 vim.system=original;vim.fn.delete(root,'rf')
 print('PASS real role store: assigned before callbacks; activity both orders; no body before role+model+inbox; once; wrong/malformed/store failure/stale rejected')

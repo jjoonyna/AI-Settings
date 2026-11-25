@@ -149,6 +149,7 @@ function M.prepare(opts,env)
   local ok,value=pcall(vim.json.decode,result.stdout or '')
   if result.code~=0 or not ok or not value.transport then return nil,'관리 transport 시작 미지원: 역할/모델/버전과 Codex 소유 서버 lifecycle을 확인하세요' end
   env.AGENT_SESSION_ROLE,env.AGENT_SESSION_MODEL=role,model
+  if type(value.warning)=='string' then vim.schedule(function()vim.notify(value.warning,vim.log.levels.WARN)end) end
   if opts.agent=='Codex' then
     local server={buf=vim.api.nvim_create_buf(false,true)}
     value.transport.server=server

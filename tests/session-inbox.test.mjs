@@ -32,6 +32,10 @@ test('managed prepare merges only CLI hook settings; no prompt, Channels, permis
   assert(!manifest.includes('token')&&!settings.includes('synthetic-inbox-secret'));assert.equal(JSON.parse(settings).hooks.SessionStart[0].hooks[0].async,true);
   assert.throws(()=>prepare({...o,vendor:'codex'},'codex-cli 0.172.0'));
   assert.throws(()=>prepare(o,'2.1.185'));
+  assert.equal(prepare(o,'2.1.331 (Claude Code)').warning,undefined);
+  assert.match(prepare(o,'2.1.332 (Claude Code)').warning,/^Claude 2\.1\.332: 검증 버전 2\.1\.331보다 높습니다/);
+  assert.throws(()=>prepare({...o,vendor:'codex'},'codex-cli 0.171.9'));
+  assert.throws(()=>prepare(o,'RAW_SECRET_VERSION'),e=>!String(e.message).includes('RAW_SECRET'));
   const id='11111111-1111-4111-8111-111111111111';
   const resumed=prepare({...o,resume:id,cmd:[process.execPath,'--continue']},'2.1.331');
   assert.deepEqual(resumed.cmd.slice(0,3),[process.execPath,'--resume',id]);assert(!resumed.cmd.includes('--session-id'));

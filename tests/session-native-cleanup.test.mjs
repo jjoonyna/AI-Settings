@@ -31,7 +31,7 @@ function fixture(failure,cleanup='normal') {
     if(failure==='initialize-timeout')return;
     if(failure==='parser-initialize')return send(serverFrame('RAW_SECRET_NOT_JSON'));
     const result=failure==='initialize-reject'?{error:{code:-32603,message:'RAW_SECRET_REMOTE'}}
-      :{result:{userAgent:failure==='version'?'RAW_SECRET_VERSION':'codex/0.172.0'}};
+      :{result:{userAgent:failure==='version'?'RAW_SECRET_VERSION':failure==='newer'?'codex/0.173.0':failure==='older'?'codex/0.171.9':'codex/0.172.0'}};
     send(serverFrame(JSON.stringify({id:message.id,...result})));
   }
   child.stdin.write=value=>{
@@ -111,6 +111,11 @@ test('bound factory acquisition failure preserves cleanup after the initial boot
     assert.equal(record.acquisition_failures[0].phase,'initialize');assert.equal(record.cleanup_failures[0].state,'pending');
     assert.equal(f.state.ends,1);assert.equal(f.state.spawns,1);
   } finally {fs.rmSync(directory,{recursive:true,force:true});}
+});
+test('native handshake accepts newer Codex with its real version and rejects older',async()=>{
+  const f=fixture('newer'),client=await connectNative(options,f.dependencies);
+  assert.equal(client.version,'0.173.0');await client.close();
+  await assert.rejects(connectNative(options,fixture('older').dependencies),e=>e.diagnostic?.phase==='version');
 });
 test('normal native handshake/initialize and once-only close keep the protocol unchanged',async()=>{
   const f=fixture('normal'),client=await connectNative(options,f.dependencies);
