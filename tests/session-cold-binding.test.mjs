@@ -58,3 +58,14 @@ test('requested launcher title survives prepare into the internal Codex launch m
     assert.equal(JSON.parse(fs.readFileSync(p.manifest)).name,f.o.name);assert.equal(p.transport.ready,false);
   }finally{for(const [k,v]of Object.entries(previous))if(v===undefined)delete process.env[k];else process.env[k]=v;f.clean();}
 });
+test('linked Codex executable is pinned to its real binary in the launch manifest',()=>{
+  const f=fixture(),values={NVIM:f.o.server,AGENT_HUB_HOME:f.o.hub,AGENT_EVENT_INSTANCE:f.o.instance,AGENT_SESSION_ID:'4',AGENT_TASK_ID:f.o.task_id};
+  const previous=Object.fromEntries(Object.keys(values).map(k=>[k,process.env[k]]));
+  const real=path.join(f.o.directory,'release'),linked=path.join(f.o.directory,'bin');
+  try {
+    fs.mkdirSync(real);fs.copyFileSync(process.execPath,path.join(real,'codex.exe'));fs.symlinkSync(real,linked,'junction');
+    Object.assign(process.env,values);const p=prepare({...f.o,vendor:'codex',executable:path.join(linked,'codex.exe'),cmd:['codex']},'codex-cli 0.172.0');
+    const executable=JSON.parse(fs.readFileSync(p.manifest)).executable;
+    assert.equal(executable,fs.realpathSync(path.join(real,'codex.exe')));assert.equal(fs.realpathSync(executable),executable);
+  }finally{for(const [k,v]of Object.entries(previous))if(v===undefined)delete process.env[k];else process.env[k]=v;f.clean();}
+});

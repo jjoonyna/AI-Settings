@@ -20,6 +20,8 @@ export function prepare(o,version) {
     const executable=candidates.find(p=>fs.existsSync(p)&&fs.statSync(p).isFile());assert(executable,'selected npm launcher native executable unavailable');
     o={...o,executable};
   }
+  // Standalone Codex installs expose a linked bin; pin the real binary so the MCP catalog's realpath check matches.
+  if(o.vendor==='codex')o={...o,executable:fs.realpathSync(o.executable)};
   const cli_session=o.resume;
   if(cli_session)assert(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(cli_session));
   const v=version??spawnSync(o.executable,['--version'],{env:childEnvironment(process.env),encoding:'utf8',stdio:['ignore','pipe','ignore'],windowsHide:true,timeout:5000,maxBuffer:4096}).stdout;

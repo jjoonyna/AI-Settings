@@ -101,3 +101,13 @@ test('monotonic deadline is checked during sequential reads before a valid call 
   assert.throws(()=>resolveClaudeCall(f.env,'connection_status',{},meta));assert.equal(reads,1);
  }finally{Object.defineProperty(globalThis,'performance',descriptor);fs.readSync=read;f.clean();}
 });
+test('transcript lookup checks only projects/<project>/<id>.jsonl, regardless of nested session folders',()=>{
+ const f=fixture();try{
+  f.write([f.record('current')]);
+  for(let i=0;i<300;i++)fs.mkdirSync(path.join(f.root,'projects','p'+i,'s'+i,'subagents'),{recursive:true});
+  fs.writeFileSync(path.join(f.root,'projects','p0','s0','subagents',id+'.jsonl'),JSON.stringify(f.record('current','claude-haiku-4-5'))+'\n');
+  assert.equal(resolveClaudeCall(f.env,'connection_status',{},meta).model,'opus');
+  fs.mkdirSync(path.join(f.root,'projects','p1',id+'.jsonl'));
+  assert.throws(()=>resolveClaudeCall(f.env,'connection_status',{},meta));
+ }finally{f.clean();}
+});
