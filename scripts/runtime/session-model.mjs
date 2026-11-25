@@ -29,18 +29,17 @@ export function resolveClaudeCall(env,name,args,meta) {
   try {
     const root=path.resolve(env.CLAUDE_CONFIG_DIR||path.join(os.homedir(),'.claude'),'projects');
     if(fs.realpathSync(root)!==root)refuse();
-    const stack=[root],matches=[];let dirs=0,entries=0;
-    while(stack.length) {
-      if(++dirs>128||performance.now()>=deadline)refuse();
-      const handle=fs.opendirSync(stack.pop());
-      try {let entry;while((entry=handle.readSync())) {
-        if(++entries>4096||performance.now()>=deadline)refuse();
-        const file=path.join(handle.path,entry.name);
-        if(entry.isSymbolicLink()) {if(entry.name===id+'.jsonl')refuse();continue;}
-        if(entry.isDirectory()) {if(fs.realpathSync(file)!==file)refuse();stack.push(file);}
-        else if(entry.isFile()&&entry.name===id+'.jsonl')matches.push(file);
-      }} finally {handle.closeSync();}
-    }
+    // Transcripts live at projects/<project>/<id>.jsonl; session subfolders (subagents, tool-results) are never scanned.
+    const matches=[];let entries=0;
+    const handle=fs.opendirSync(root);
+    try {let entry;while((entry=handle.readSync())) {
+      if(++entries>16384||performance.now()>=deadline)refuse();
+      if(!entry.isDirectory())continue;
+      const file=path.join(root,entry.name,id+'.jsonl');let stat;
+      try{stat=fs.lstatSync(file);}catch(error){if(error.code==='ENOENT'||error.code==='ENOTDIR')continue;refuse();}
+      if(!stat.isFile())refuse();
+      matches.push(file);
+    }} finally {handle.closeSync();}
     if(matches.length!==1)refuse();
     const file=matches[0],pause=new Int32Array(new SharedArrayBuffer(4));let previous,identity;
     for(;;) {
