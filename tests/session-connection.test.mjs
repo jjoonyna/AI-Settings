@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { resolveConnection, invokeConnection, payloadForBinding, registryValid, classifyResult } from '../scripts/runtime/session-connection.mjs';
+import { resolveConnection, invokeConnection, payloadForBinding, registryValid, classifyResult, rpcTimeout } from '../scripts/runtime/session-connection.mjs';
 const cli = '12345678-1234-1234-1234-123456789abc';
 const identity = { instance: 'old', owner: 1, task_id: 'task', vendor: 'codex', cli_session: cli };
 const binding = { ...identity, server: 'direct' };
@@ -89,4 +89,8 @@ test('report uses verified moved parent rather than stale environment parent', a
   assert.equal(report.count,1); assert.equal(report.payload.owner,8); assert.equal(report.payload.parent_id,7);
   assert.throws(()=>payloadForBinding({ ...binding, parent_id:7 },'report',{parent_id:1}),/identity/);
   assert.throws(()=>payloadForBinding(binding,'report',{}),/parent/);
+});
+test('only handoff gets the longer Neovim connection limit',()=>{
+  assert.equal(rpcTimeout('handoff'),60000);
+  for(const a of ['preview','report','task-complete','activity','status'])assert.equal(rpcTimeout(a),15000);
 });

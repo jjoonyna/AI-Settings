@@ -90,17 +90,19 @@ export function install(options) {
   if (options.dryRun) return { mode, home, nvim, root, actions: ['copy managed files', 'merge local settings', 'install skills', 'preserve credentials/history'], dryRun: true };
   // Validate config syntax and ambiguous managed inline tables before writing anything.
   const roles = ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback'];
-  const preflight = { approval_policy: '"on-request"', approvals_reviewer: '"auto_review"' };
+  const preflight = { sandbox_mode: '"danger-full-access"', default_permissions: null, approval_policy: '"on-request"', approvals_reviewer: '"auto_review"' };
   for (const role of roles) {
     preflight[`profiles.${role}.approval_policy`] = null;
     preflight[`profiles.${role}.approvals_reviewer`] = null;
+    preflight[`profiles.${role}.sandbox_mode`] = null;
+    preflight[`profiles.${role}.default_permissions`] = null;
   }
   const configHome = path.join(home, '.codex');
   const existingConfig = path.join(configHome, 'config.toml');
   mergeToml(present(existingConfig) ? read(existingConfig) : '', preflight);
   for (const role of roles) {
     const roleConfig = path.join(configHome, role + '.config.toml');
-    mergeToml(present(roleConfig) ? read(roleConfig) : '', { approval_policy: null, approvals_reviewer: null });
+    mergeToml(present(roleConfig) ? read(roleConfig) : '', { sandbox_mode: '"danger-full-access"', default_permissions: null, approval_policy: null, approvals_reviewer: null, ...(role === 'plan' ? { '".agent-shared.md"': null } : {}) });
   }
   try {
     // Preserve local settings before source files are replaced.
@@ -146,23 +148,26 @@ export function install(options) {
     for (const role of ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback']) {
       const target = path.join(codexHome, role + '.config.toml');
       const before = present(target) ? read(target) : '';
-      const managed = { ...tomlValues(read(path.join(repo, 'codex', role + '.config.toml'))), model: null, model_reasoning_effort: null, approval_policy: role === 'review' ? '"never"' : null, approvals_reviewer: null,
-        ...(role === 'plan' ? { sandbox_mode: null } : { default_permissions: null }) };
+      const managed = { ...tomlValues(read(path.join(repo, 'codex', role + '.config.toml'))), model: null, model_reasoning_effort: null, approval_policy: ['review', 'deep-review'].includes(role) ? '"never"' : null, approvals_reviewer: null, default_permissions: null, ...(role === 'plan' ? { '".agent-shared.md"': null } : {}) };
       manifest.configs[target] = { type: 'toml', managed, original: old.configs?.[target]?.original ?? before };
       put(target, mergeToml(before, managed));
     }
     const status = ['model-with-reasoning', 'five-hour-limit', 'weekly-limit', 'context-used', 'current-dir', 'git-branch'];
     const codexConfig = path.join(codexHome, 'config.toml');
-    const managed = { approval_policy: '"on-request"', approvals_reviewer: '"auto_review"', model: JSON.stringify(catalog.defaults.codex), model_reasoning_effort: '"medium"', 'tui.status_line': JSON.stringify(status), 'windows.sandbox': '"elevated"' };
+    const managed = { sandbox_mode: '"danger-full-access"', default_permissions: null, approval_policy: '"on-request"', approvals_reviewer: '"auto_review"', model: JSON.stringify(catalog.defaults.codex), model_reasoning_effort: '"medium"', 'tui.status_line': JSON.stringify(status) };
     managed['mcp_servers.ai_settings_sessions.command'] = JSON.stringify(process.execPath);
     managed['mcp_servers.ai_settings_sessions.args'] = JSON.stringify([path.join(root, 'bin/session-tools.mjs')]);
     managed['mcp_servers.ai_settings_sessions.env_vars'] = JSON.stringify(['NVIM','AI_SETTINGS_HOME','AGENT_HUB_HOME','AGENT_EVENT_INSTANCE','AGENT_SESSION_ID','AGENT_TASK_ID','AGENT_SESSION_VENDOR','CODEX_THREAD_ID','CODEX_SESSION_ID','CODEX_HOME']);
     for (const role of ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback']) {
       managed[`profiles.${role}.approval_policy`] = null;
       managed[`profiles.${role}.approvals_reviewer`] = null;
+      managed[`profiles.${role}.sandbox_mode`] = null;
+      managed[`profiles.${role}.default_permissions`] = null;
     }
     // Retain notify support for the existing completion hook; Codex-only uses its own installed hook.
     const beforeToml = present(codexConfig) ? read(codexConfig) : '';
+    const previousWindowsSandbox = old.configs?.[codexConfig]?.managed?.['windows.sandbox'];
+    if (typeof previousWindowsSandbox === 'string' && tomlValues(beforeToml)['windows.sandbox'] === previousWindowsSandbox) managed['windows.sandbox'] = previousWindowsSandbox;
     const previousNotify = tomlValues(beforeToml).notify;
     if (!previousNotify || previousNotify === old.configs?.[codexConfig]?.managed?.notify) {
       managed.notify = JSON.stringify(['node', path.join(root, 'bin/agent-done.js').replaceAll('\\', '/'), '--codex']);

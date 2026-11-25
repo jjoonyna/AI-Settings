@@ -9,7 +9,7 @@ both 설치의 Claude 새 시작·재개도 설치 루트 `claude-mcp.json`을 `
 
 관리 본문은 Codex 0.172.0 이상 UUID queue API 또는 Claude 2.1.331 이상 공식 own session inbox만 사용한다(검증 버전보다 높으면 경고, 미만이면 거부). 초기 지시는 준비 후 한 번 등록하며 PTY 본문·자동 Enter를 보내지 않는다. queue 접수와 모델 실행·부모 확인은 구분한다. 응답 유실/unknown·만료·중복·신원 변경이면 자동 재전송하지 않는다. Channels 조직 비활성화를 우회하지 않고 Claude 인증값은 정상 hook 자식 메모리와 자기 pipe 인증에만 둔다. TUI 자동 종료 미지원은 명시 실패하고 보존한다. exFAT의 권한 설정은 OS 쓰기 차단 보장이 아니며 기존 역할별 운영 규칙과 MCP 경계는 유지한다.
 
-Codex·Claude/Neovim에서는 설치가 자동 등록한 `ai_settings_sessions` MCP를 우선 사용한다. 먼저 `connection_status({})`로 실제 신원·역할·모델을 확인한다. 계획은 `handoff({request:{agent:선택벤더,session:'work' 또는 'review',model:선택모델,name:작업제목,goal:목표,scope:담당범위,validation:검증기준,prompt:핵심지시,spec_doc:spec경로,plan_doc:plan경로}})`, `preview({path:검토문서})`, `session_status({owner:자식번호,task_id:정확한작업ID})`, `task_complete({owner:자식번호,task_id:정확한작업ID,verified:true,reviewed:true})`를 사용한다. 부모 모델·서버·CLI ID는 도구가 검증해 결정한다. 경로는 현재 프로젝트 docs 내부 실제 Markdown이고 위임 작업 폴더는 현재 프로젝트다. 작업·리뷰는 `report({text:보고본문})`로 실제 부모에게 보고하고 OK를 확인하며 자기 `session_status`만 조회한다. 보고/프로세스 종료를 완료로 간주하지 않는다.
+Codex·Claude/Neovim에서는 설치가 자동 등록한 `ai_settings_sessions` MCP를 우선 사용한다. 먼저 `connection_status({})`로 실제 신원·역할·모델을 확인한다. 계획은 `handoff({request:{agent:선택벤더,session:'work' 또는 'review',model:선택모델,name:작업제목,goal:목표,scope:담당범위,validation:검증기준,prompt:핵심지시,spec_doc:spec경로,plan_doc:plan경로}})`, `preview({path:검토문서})`, `session_status({owner:자식번호,task_id:정확한작업ID})`, `task_complete({owner:자식번호,task_id:정확한작업ID,verified:true,reviewed:true})`를 사용한다. 부모 모델·서버·CLI ID는 도구가 검증해 결정한다. 경로는 현재 프로젝트 docs 내부 실제 Markdown이고 위임 작업 폴더는 현재 프로젝트다. 작업·리뷰는 `report({text:보고본문})`로 실제 부모에게 보고하고 OK를 확인하며 자기 `session_status`만 조회한다. 보고/프로세스 종료를 완료로 간주하지 않는다. report가 `FAIL … 보고는 저장됨`이면 재전송하지 않으며 부모가 `session_status`로 저장된 보고를 읽는다.
 
 관리 Codex의 새 시작·선택/최근 재개는 세션별 private native 서버와 명시적인 `--remote` endpoint의 동일 UUID를 연결하고 실제 역할·모델·권한을 확인한다. MCP는 호스트에서 제한된 세션 관리만 수행하며 일반 셸·Lua·파일 쓰기를 제공하지 않는다. 등록 후 새 세션에서 도구 발견·실제 호출을 확인해야 한다. 신원 환경이 없으면 초기화만 되고 호출은 identity 오류로 거부된다. identity/role/path 오류를 CLI로 우회하지 않는다. 샌드박스 셸 CLI의 EPERM과 MCP 미등록·초기화 실패·신원 실패는 별개이며, connection refused는 서버 가용성 문제로 확인한다. 응답 유실 또는 FAIL/PENDING을 자동 재전송하지 않는다.
 
@@ -45,7 +45,7 @@ AgentHandoff({agent='claude', session='work', model='sonnet', parent_model='opus
 
 ## Codex 앱 원격
 
-NVIM이 없으면 정확한 `CODEX_THREAD_ID` 또는 `CODEX_SESSION_ID`와 실제 계획 역할·모델을 검증해 Codex 앱의 별도 영구 대화를 생성한다. JSON의 `agent`는 `codex`, `session`은 `work` 또는 `review`, `model`은 실제 부모 이하로 지정한다. `name`, `goal`, `scope`, `validation`, `prompt`, `spec_doc`, `plan_doc`와 작업 경로를 제공한다. 작업은 workspace-write, 리뷰는 전체 승인이며 실제 응답을 검증한 뒤 시작한다. 상위 도구 제한이 우선한다.
+NVIM이 없으면 정확한 `CODEX_THREAD_ID` 또는 `CODEX_SESSION_ID`와 실제 계획 역할·모델을 검증해 Codex 앱의 별도 영구 대화를 생성한다. JSON의 `agent`는 `codex`, `session`은 `work` 또는 `review`, `model`은 실제 부모 이하로 지정한다. `name`, `goal`, `scope`, `validation`, `prompt`, `spec_doc`, `plan_doc`와 작업 경로를 제공한다. 작업과 리뷰는 OS 샌드박스 없이 실행하며 작업은 on-request/auto_review, 리뷰는 never로 실제 응답을 검증한다. auto_review는 승인 대상만 심사하며 모든 셸 명령을 심사하지 않는다. 상위 도구 제한이 우선한다.
 
 새 앱 계획 대화는 첫 질문으로 임의 제목이 붙을 수 있다. 사용자가 계획 역할로 연 대화는 위임 전에 현재 대화의 이름을 `계획 | 작업 제목`으로 지정한다. 작업·리뷰는 자기 역할을 계획으로 바꿔 재위임하지 않는다. 상위 도구 제한으로 앱 도구에 모델을 지정할 수 없으면 모델 지정을 지원하는 CLI 경로를 사용한다.
 

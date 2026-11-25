@@ -272,3 +272,22 @@ test('both install loads Claude managed MCP on new/resume and calls real host wi
     const freshChild=run('handoff',{request:{...request,task_id:'explicit-claude-task'}},fresh);assert(!freshChild.isError,freshChild.content[0].text);assert.match(freshChild.content[0].text,/OK id=22/);assert.equal(handoffIdentity(freshChild).task_id,'explicit-claude-task');
   }finally{adapter.stdin.end();assert.equal(await closed,0,'owned synthetic MCP adapter exits normally');}
 });
+test('handoff schema exposes required fields and errors name fields without values',async()=>{
+  const {callTool,tools}=await import(moduleURL);
+  const schema=tools.find(t=>t.name==='handoff').inputSchema.properties.request;
+  assert.equal(schema.additionalProperties,false);
+  assert.deepEqual(schema.required,['agent','session','model','name','goal','scope','validation','prompt','spec_doc','plan_doc']);
+  assert.deepEqual(Object.keys(schema.properties).filter(k=>!schema.required.includes(k)).sort(),['cwd','decisions','references','report_to','task_id','verify_cmds','worktree']);
+  assert.equal(schema.properties.spec_doc.type,'string');assert.deepEqual(schema.properties.verify_cmds,{type:'array',items:{type:'string'}});
+  const full={agent:'codex',session:'work',model:'gpt-6-luna',name:'n',goal:'g',scope:'s',validation:'v',prompt:'p',spec_doc:'docs/a.md',plan_doc:'docs/a.md'};
+  const call=request=>callTool('handoff',{request},env,fixture());
+  const {spec_doc,plan_doc,...partial}=full;void spec_doc;void plan_doc;
+  assert.throws(()=>call(partial),/^Error: argument: missing spec_doc, plan_doc$/);
+  assert.throws(()=>call({...full,secretish:'VALUE_MUST_NOT_APPEAR'}),e=>/^argument: unsupported secretish$/.test(e.message)&&!e.message.includes('VALUE_MUST'));
+  const ctl=String.fromCharCode(1),nl=String.fromCharCode(10);
+  assert.throws(()=>call({...full,['bad'+ctl+nl+'key']:'v'}),/^Error: argument: unsupported badkey$/);
+  const long='x'.repeat(100);assert.throws(()=>call({...full,[long]:'v'}),e=>e.message==='argument: unsupported '+'x'.repeat(64));
+  const many=Object.fromEntries(Array.from({length:15},(_,i)=>['extra'+i,'v']));
+  assert.throws(()=>call({...full,...many}),e=>e.message.split(', ').length===10&&!e.message.includes('extra10'));
+  assert.throws(()=>call({...full,spec_doc:'  '}),/^Error: argument: empty spec_doc$/);
+});

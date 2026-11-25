@@ -1,2 +1,3 @@
 # AI-Settings: 모델은 호출 세션이 지정한다.
-sandbox_mode = "read-only"
+sandbox_mode = "danger-full-access"
+approval_policy = "never"

@@ -20,7 +20,7 @@ function scenario(stage,cleanup=normal,verificationError) {
     async request(method){events.push(label+':'+method);
       assert(['thread/start','thread/name/set','thread/resume','mcpServerStatus/list'].includes(method),'body/turn/retry forbidden');
       if(verificationError&&method==='mcpServerStatus/list')throw verificationError;
-      if(method!=='mcpServerStatus/list')return {thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}};
+      if(method!=='mcpServerStatus/list')return {thread:{id},model:o.model,cwd:o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}};
       return {data:[{name:'ai_settings_sessions',authStatus:'unsupported',runtimeStatus:'connected',serverInfo:{name:'ai-settings-sessions',version:'0.1.0'},serverCapabilities:{tools:{}},toolsError:null,
         resources:[],resourceTemplates:[],tools:Object.fromEntries(tools.map(t=>[t.name,t])),toolListMeta:{'ai-settings/session-bootstrap':{version:1,vendor:'codex',instance:o.instance,owner:o.owner,task_id:o.task_id,
           cli_session:id,runtime:o.runtime,server:o.server,hub:o.hub,endpoint:recipe.endpoint}}}],nextCursor:null};

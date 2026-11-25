@@ -42,10 +42,12 @@ export function classifyResult(result) {
   return 'protocol';
 }
 
-function rpc(server, phase, payload) {
+export const RPC_TIMEOUT=15000, HANDOFF_TIMEOUT=60000;
+export const rpcTimeout = action => action==='handoff' ? HANDOFF_TIMEOUT : RPC_TIMEOUT;
+function rpc(server, phase, payload, timeout=RPC_TIMEOUT) {
   return spawnSync('nvim', ['--headless','-u','NONE','-i','NONE','-l',
     fileURLToPath(new URL('./session-connection-rpc.lua', import.meta.url)), server, phase],
-  {input: JSON.stringify(payload), encoding:'utf8', env:childEnvironment(process.env), windowsHide:true, timeout:15000});
+  {input: JSON.stringify(payload), encoding:'utf8', env:childEnvironment(process.env), windowsHide:true, timeout});
 }
 function probeServer(server, identity) {
   const result = rpc(server, 'resolve', identity);
@@ -92,7 +94,7 @@ export function resolveConnection(identity, {server, env=process.env, now=Date.n
   if (found.length!==1) throw new Error(found.length ? 'ambiguous: multiple candidates' : 'identity: no verified candidate');
   return found[0];
 }
-export function invokeConnection(binding, action, payload, {run=(b,a,p)=>rpc(b.server,'invoke',{binding:b,action:a,payload:p})} = {}) {
+export function invokeConnection(binding, action, payload, {run=(b,a,p)=>rpc(b.server,'invoke',{binding:b,action:a,payload:p},rpcTimeout(a))} = {}) {
   if (!valid(binding) || !['handoff','preview','report','task-complete','activity','status'].includes(action)) throw new Error('identity: invalid invocation');
   const result = run(binding,action,payload);
   if (result.error || result.signal || result.status !== 0) throw new Error(`${classifyResult(result)}: execution unknown (실행 여부 불명); do not resend automatically`);

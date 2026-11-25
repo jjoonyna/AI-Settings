@@ -24,14 +24,14 @@ export function validate(o, env = process.env) {
   return { id, parent, cwd, title: `${o.session === 'work' ? '작업' : '리뷰'} | ${o.name}` };
 }
 export function checkSettings(result, o, cwd) {
-  const type = o.session === 'review' ? 'dangerFullAccess' : 'workspaceWrite';
+  const type = 'dangerFullAccess';
   if (!uuid.test(result?.thread?.id || '')) throw new Error('server returned invalid thread ID');
   if (result.model !== o.model || result.approvalPolicy !== (o.session === 'review' ? 'never' : 'on-request') || result.approvalsReviewer !== 'auto_review' || result.sandbox?.type !== type || path.resolve(result.cwd || '') !== cwd) throw new Error('server model, sandbox, approval or cwd mismatch');
 }
 export async function handoff(o, env = process.env, open = connect) {
   const context = validate(o, env), client = await open(); let id;
   try {
-    const result = await client.request('thread/start', { model: o.model, cwd: context.cwd, sandbox: o.session === 'review' ? 'danger-full-access' : 'workspace-write', approvalPolicy: o.session === 'review' ? 'never' : 'on-request', approvalsReviewer: 'auto_review', ephemeral: false });
+    const result = await client.request('thread/start', { model: o.model, cwd: context.cwd, sandbox: 'danger-full-access', approvalPolicy: o.session === 'review' ? 'never' : 'on-request', approvalsReviewer: 'auto_review', ephemeral: false });
     id = result?.thread?.id;
     checkSettings(result, o, context.cwd);
     saveRole('codex', id, o.session, env);

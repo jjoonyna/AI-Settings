@@ -62,7 +62,7 @@ test('consumed or externally changed launch binding fails without a thread mutat
   for(const changed of [false,true]){const f=fixture();try {
     const original=fs.readFileSync(f.file);if(changed){delete f.o.cli_session;fs.writeFileSync(f.original,JSON.stringify({...f.o,task_id:'other'}));}
     const recipe=codexRecipe(f.o,f.env),methods=[];let closes=0;
-    const r=await inspectCodex(f.o,recipe,'--initialize',async()=>({close:async()=>{closes++;return {exit:{code:0}};},request:async method=>{methods.push(method);return {thread:{id},model:f.o.model,cwd:f.o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}};}}));
+    const r=await inspectCodex(f.o,recipe,'--initialize',async()=>({close:async()=>{closes++;return {exit:{code:0}};},request:async method=>{methods.push(method);return {thread:{id},model:f.o.model,cwd:f.o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}};}}));
     assert.equal(r.code,1);assert.equal(r.result.mcp_verified,undefined);assert.equal(closes,1);assert.deepEqual(methods,[]);
     if(!changed)assert.deepEqual(fs.readFileSync(f.file),original);
   }finally{f.clean();}}
@@ -78,7 +78,7 @@ test('unknown launch fields cannot be copied into a newly published UUID context
 test('new bootstrap disables initial MCP discovery and binds verified UUID before enabling cold discovery',async()=>{
   const f=fixture();try {
     delete f.o.cli_session;fs.writeFileSync(f.original,JSON.stringify(f.o));fs.unlinkSync(f.file);const recipe=codexRecipe(f.o,f.env);let opens=0;const events=[];
-    const response=()=>({thread:{id},model:f.o.model,cwd:f.o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'workspaceWrite'}});
+    const response=()=>({thread:{id},model:f.o.model,cwd:f.o.cwd,approvalPolicy:'on-request',approvalsReviewer:'auto_review',sandbox:{type:'dangerFullAccess'}});
     const open=async()=>{const bound=opens++>0;return {close:async()=>{events.push('close');return {exit:{code:0}};},request:async(method,p)=>{
       events.push(method);
       if(method==='thread/start'){assert.equal(p.config['mcp_servers.ai_settings_sessions'].enabled,false,'no early unbound tools/list or wait');return response();}

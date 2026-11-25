@@ -1,9 +1,2 @@
 # AI-Settings: 모델은 호출 세션이 지정한다.
-default_permissions = "plan-docs"
-
-[permissions.plan-docs]
-extends = ":read-only"
-
-[permissions.plan-docs.filesystem.":workspace_roots"]
-"docs" = "write"
-".agent-shared.md" = "write"
+sandbox_mode = "danger-full-access"

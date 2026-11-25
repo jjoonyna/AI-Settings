@@ -27,7 +27,7 @@ for _,activity_first in ipairs({true,false})do for _,order in ipairs({{'bind-inb
  local value=assert(prepare());assert(handoff.verified_role({agent='Claude',cli_session=id,role='plan'}),'assigned role must exist BEFORE any native callback')
  local now=os.time()*1000;local e={id=4,agent='Claude',role='plan',model='opus',task_id='task',cli_session=id,event_token='synthetic',event_started=now-1000,cwd=vim.fn.getcwd(),transport=value.transport};T.registry[4]=e
  local identity={instance=H.id,owner=4,task_id='task',vendor='claude',cli_session=id,token=e.event_token}
- local function call(op)return M.receive({operation=op,identity=identity,role=e.role,model=op=='model-attest' and 'opus' or nil})end
+ local function call(op)return M.receive({operation=op,identity=identity,role=e.role,model=op=='model-attest' and 'opus' or nil,hook_id=id})end
  local function activity()assert(A.receive({instance=H.id,owner=4,token=e.event_token,at=now,cli_session=id,event='SessionStart',status='idle',source='claude:SessionStart'}):match('^OK'))end
  assert(not e.transport.ready and not e.transport.model_verified);assert(M.startup(e,'synthetic body'))
  if activity_first then activity()end
@@ -45,7 +45,7 @@ end end
 -- A role removed after trusted preparation does not get recreated by a callback.
 local removed=new_id();local prepared=assert(prepare());vim.fn.delete(root..'/state/session-roles/claude/'..removed..'.json')
 T.registry[4]={id=4,agent='Claude',role='plan',model='opus',task_id='task',cli_session=removed,event_token='removed',transport=prepared.transport}
-assert(not M.receive({operation='bind-inbox',identity={instance=H.id,owner=4,task_id='task',vendor='claude',cli_session=removed,token='removed'},role='plan'}).ok)
+assert(not M.receive({operation='bind-inbox',identity={instance=H.id,owner=4,task_id='task',vendor='claude',cli_session=removed,token='removed'},role='plan',hook_id=removed}).ok)
 assert(prepared.transport.model_failed and not vim.uv.fs_stat(root..'/state/session-roles/claude/'..removed..'.json'));T.registry[4]=nil
 -- Existing conflicting or malformed role is never overwritten.
 for _,invalid in ipairs({false,true})do

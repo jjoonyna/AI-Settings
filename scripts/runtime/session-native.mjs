@@ -173,7 +173,7 @@ export async function connectNative(options,dependencies={}) {
     phase='initialize';
     const init=await request('initialize',{clientInfo:{name:'ai-settings-host-capability',version:'0.1.0'},capabilities:{experimentalApi:true}});
     phase='version';
-    const checked=checkVersion('codex',/codex[^/]*\/(\S+)/.exec(init?.userAgent||'')?.[1]);
+    const checked=checkVersion('codex',/^(?:ai-settings-host-capability|codex(?:[-_][A-Za-z0-9_-]+)?)\/(\S+)/.exec(init?.userAgent||'')?.[1]);
     phase='initialize';
     child.stdin.write(frame(JSON.stringify({method:'initialized',params:{}})));
     phase='ready';
