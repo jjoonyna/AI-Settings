@@ -1,14 +1,17 @@
 return {
   -- ── 구분선을 눈에 띄게 (설계 §4-2-9 ②) ──────────────
   {
-    "folke/tokyonight.nvim",
+    "rebelot/kanagawa.nvim",
+    commit = "bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3",
     opts = {
-      on_highlights = function(hl, c)
-        -- 기본 구분선은 배경과 거의 구분되지 않는다. 밝기를 올린다.
-        hl.WinSeparator = { fg = c.blue0, bold = true }
+      theme = "dragon",
+      background = { dark = "dragon" },
+      overrides = function(colors)
+        return { WinSeparator = { fg = colors.palette.dragonGray2, bold = true } }
       end,
     },
   },
+  { "LazyVim/LazyVim", opts = { colorscheme = "kanagawa-dragon" } },
 
   -- ── 파일트리: 시작 시 자동 표시 (설계 §4-2-2) ────────
   {

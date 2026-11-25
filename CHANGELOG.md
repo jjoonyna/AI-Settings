@@ -4,6 +4,7 @@
 
 ### 변경
 
+- Neovim 기본 다크 테마를 Kanagawa Dragon으로 변경하고 분할 창 구분선의 식별성을 유지합니다.
 - 관리 Codex의 모든 역할에서 OS 샌드박스를 해제합니다. 기본 승인은 on-request와 auto_review이며 리뷰와 deep-review는 never입니다. auto_review는 승인 대상만 심사하며 모든 셸 명령을 심사하지 않습니다. 기존 세션에는 소급 적용되지 않아 재시작이 필요합니다.
 
 ### 수정

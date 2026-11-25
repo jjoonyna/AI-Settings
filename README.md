@@ -16,7 +16,7 @@ AI TUI 자동 정상 종료는 미지원으로 세션을 보존합니다. 사용
 
 Windows 10/11과 PowerShell 5.1+에서 실행합니다. Git·Node.js·Neovim·Windows Terminal·선택한 AI CLI가 없으면 WinGet/npm으로 설치하고 PATH를 갱신합니다. 디자인·PPT 도구에 필요한 실제 Python도 확인해 설치합니다. WinGet이 없는 PC는 Windows 앱 설치 관리자를 먼저 설치해야 합니다.
 
-[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.0.9.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
+[GitHub Releases](https://github.com/jjoonyna/AI-Settings/releases)에서 `AI-Settings-Setup-v0.1.2.exe`를 내려받아 실행하고 마법사에서 구성을 선택합니다. 완료 화면에서 사용설명서를 열 수 있으며 릴리즈에서 PDF를 별도로 내려받을 수도 있습니다. 업데이트할 때도 새 버전의 EXE를 다시 실행한 뒤 Neovim을 다시 엽니다.
 
 대체 방법으로 **Source code (zip)**을 내려받아 압축을 풀고 `install.cmd`를 실행할 수 있습니다. EXE는 코드 서명되지 않았습니다.
 
@@ -49,6 +49,8 @@ Codex 설치와 재설치는 모든 역할에 `danger-full-access`를 적용해 
 재설치는 관리 항목을 새 규칙으로 갱신하고 개인 MCP·플러그인·권한·지침·PC별 경로·인증·대화 기록은 보존합니다. 같은 관리 항목의 충돌은 배포 규칙을 우선합니다. 기존 폴더 링크는 독립 복사본으로 전환합니다. 백업·소유 파일·외부 도구 버전은 `~/.ai-settings`에 기록합니다. 실패하면 설정 파일 변경을 복구하며 다운로드 캐시·Python 환경은 남을 수 있습니다.
 
 ## 사용
+
+Neovim의 기본 다크 테마는 Kanagawa Dragon입니다. 설치 또는 업데이트 후 Neovim을 다시 열면 적용됩니다.
 
 [한국어 사용설명서 PDF](runtime/AI-Settings-User-Guide.ko.pdf)에서 설치, 첫 세션, 검토, 문제 해결 절차를 볼 수 있습니다. 설치 후 기본 위치는 `%USERPROFILE%\.ai-settings\AI-Settings-User-Guide.ko.pdf`입니다.
 
