@@ -91,5 +91,5 @@ test('websocket frame fragmentation, control and limits', () => {
   assert.equal(frame('x')[1]&128,128);
 });
 test('installation copies app runtime and policy', () => {
-  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'remote-install-')); try { const home=path.join(temp,'home'); const r=install({home,nvim:path.join(temp,'nvim'),mode:'codex',skipTools:true}); for(const f of ['app-proxy.mjs','app-session.mjs','session.mjs']) assert.deepEqual(fs.readFileSync(path.join(r.root,'bin',f)),fs.readFileSync(path.join('scripts/runtime',f))); assert.deepEqual(fs.readFileSync(path.join(r.root,'POLICY.md')),fs.readFileSync('runtime/POLICY.md')); } finally { fs.rmSync(temp,{recursive:true,force:true}); }
+  const temp=fs.mkdtempSync(path.join(os.tmpdir(),'remote-install-')); try { const home=path.join(temp,'home'); const r=install({home,nvim:path.join(temp,'nvim'),mode:'codex',skipTools:true}); for(const f of ['app-proxy.mjs','app-session.mjs','session.mjs','session-connection.mjs','session-connection-rpc.lua']) assert.deepEqual(fs.readFileSync(path.join(r.root,'bin',f)),fs.readFileSync(path.join('scripts/runtime',f))); assert.deepEqual(fs.readFileSync(path.join(r.root,'POLICY.md')),fs.readFileSync('runtime/POLICY.md')); } finally { fs.rmSync(temp,{recursive:true,force:true}); }
 });

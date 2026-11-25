@@ -40,14 +40,14 @@ end
 function M.send(text)
   pick_terminal("보낼 대상", function(e)
     if text and text ~= "" then
-      terminal.send(e.id, text)
-      vim.notify(e.name .. " 로 보냈습니다")
+      local ok,why=terminal.send(e.id, text)
+      vim.notify(ok and (e.name .. ' 관리 queue에 등록했습니다 (실행 미확인)') or tostring(why),ok and vim.log.levels.INFO or vim.log.levels.ERROR)
       return
     end
     vim.ui.input({ prompt = e.name .. " 로 보낼 내용: " }, function(input)
       if input and input ~= "" then
-        terminal.send(e.id, input)
-        vim.notify(e.name .. " 로 보냈습니다")
+        local ok,why=terminal.send(e.id, input)
+        vim.notify(ok and (e.name .. ' 관리 queue에 등록했습니다 (실행 미확인)') or tostring(why),ok and vim.log.levels.INFO or vim.log.levels.ERROR)
       end
     end)
   end)

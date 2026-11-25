@@ -5,13 +5,21 @@ description: 계획·작업·읽기 전용 리뷰를 연결하고 모델 선택,
 
 # 세션 실행
 
+both 설치의 Claude 새 시작·재개도 설치 루트 `claude-mcp.json`을 `--mcp-config`로 불러 같은 6개 도구를 사용한다. 개인 MCP·hook과 기존 재개 인수를 보존하고, Claude→Codex 교차 위임은 신선한 유효 사용률 80% 이상일 때 리뷰에만 허용한다. Codex→Claude와 상위 모델 위임은 거부한다.
+
+관리 본문은 Codex 0.172.0 UUID queue API 또는 Claude 2.1.331 공식 own session inbox만 사용한다. 초기 지시는 준비 후 한 번 등록하며 PTY 본문·자동 Enter를 보내지 않는다. queue 접수와 모델 실행·부모 확인은 구분한다. 응답 유실/unknown·만료·중복·신원 변경이면 자동 재전송하지 않는다. Channels 조직 비활성화를 우회하지 않고 Claude 인증값은 정상 hook 자식 메모리와 자기 pipe 인증에만 둔다. TUI 자동 종료 미지원은 명시 실패하고 보존한다. exFAT의 권한 설정은 OS 쓰기 차단 보장이 아니며 기존 역할별 운영 규칙과 MCP 경계는 유지한다.
+
+Codex·Claude/Neovim에서는 설치가 자동 등록한 `ai_settings_sessions` MCP를 우선 사용한다. 먼저 `connection_status({})`로 실제 신원·역할·모델을 확인한다. 계획은 `handoff({request:{agent:선택벤더,session:'work' 또는 'review',model:선택모델,name:작업제목,goal:목표,scope:담당범위,validation:검증기준,prompt:핵심지시,spec_doc:spec경로,plan_doc:plan경로}})`, `preview({path:검토문서})`, `session_status({owner:자식번호,task_id:정확한작업ID})`, `task_complete({owner:자식번호,task_id:정확한작업ID,verified:true,reviewed:true})`를 사용한다. 부모 모델·서버·CLI ID는 도구가 검증해 결정한다. 경로는 현재 프로젝트 docs 내부 실제 Markdown이고 위임 작업 폴더는 현재 프로젝트다. 작업·리뷰는 `report({text:보고본문})`로 실제 부모에게 보고하고 OK를 확인하며 자기 `session_status`만 조회한다. 보고/프로세스 종료를 완료로 간주하지 않는다.
+
+관리 Codex의 새 시작·선택/최근 재개는 세션별 private native 서버와 명시적인 `--remote` endpoint의 동일 UUID를 연결하고 실제 역할·모델·권한을 확인한다. MCP는 호스트에서 제한된 세션 관리만 수행하며 일반 셸·Lua·파일 쓰기를 제공하지 않는다. 등록 후 새 세션에서 도구 발견·실제 호출을 확인해야 한다. 신원 환경이 없으면 초기화만 되고 호출은 identity 오류로 거부된다. identity/role/path 오류를 CLI로 우회하지 않는다. 샌드박스 셸 CLI의 EPERM과 MCP 미등록·초기화 실패·신원 실패는 별개이며, connection refused는 서버 가용성 문제로 확인한다. 응답 유실 또는 FAIL/PENDING을 자동 재전송하지 않는다.
+
 설치된 `~/.ai-settings/POLICY.md`와 `models.json`을 따른다. 계획 세션은 Claude·Codex 모두 handoff로 별도 영구 작업·리뷰 세션을 열고 실패하면 보고하고 실행 경로를 복구한다. 이미 확인된 작업·리뷰 역할은 다시 확인하지 않는다. 사용자 홈은 실제 환경에서 찾는다. `~/.ai-settings/install.json`에서 설치 모드를 확인한다.
 
-설치된 `~/.ai-settings/bin/session.mjs`를 Node로 실행한다. 실제 설치 루트는 환경변수 `AI_SETTINGS_HOME`을 우선 사용한다. 구조화된 JSON 요청 파일을 프로젝트 `docs/` 아래에 쓰고 다음처럼 전달한다. 명령 경로는 실제 절대경로로 확장한다.
+전용 도구가 명시적으로 지원되지 않는 CLI·앱 경로에서는 설치된 `~/.ai-settings/bin/session.mjs`를 Node로 실행한다. 실제 설치 루트는 환경변수 `AI_SETTINGS_HOME`을 우선 사용한다. 구조화된 JSON 요청 파일을 프로젝트 `docs/` 아래에 쓰고 다음처럼 전달한다. 명령 경로는 실제 절대경로로 확장한다.
 
 ```text
 node <설치루트>/bin/session.mjs handoff <요청.json>
-node <설치루트>/bin/session.mjs preview <프로젝트>/docs/user-review/<주제>.md
+node <설치루트>/bin/session.mjs preview <프로젝트>/docs/<주제>.md
 node <설치루트>/bin/session.mjs report <결과.md>
 node <설치루트>/bin/session.mjs report -   # 본문을 표준 입력(heredoc)으로 전달
 node <설치루트>/bin/session.mjs task-complete <완료확인.json>
@@ -25,14 +33,14 @@ AgentHandoff({agent='claude', session='work', model='sonnet', parent_model='opus
 ```
 
 - `session='review'`는 읽기 전용으로 실행한다. 교차 Codex 리뷰에는 `parent_agent='claude'`와 실제 부모 모델을 전달한다. 도구가 사용률 캐시를 검증한다. plan에 보안 영향이 있으면 리뷰 prompt에 보안 점검을 지시한다.
-- Claude와 Codex 리뷰는 전체 승인으로 실행한다. 파일 수정·생성·삭제와 재위임을 금지하며 셸·외부 도구에도 적용한다. Neovim 보고는 report -로 보내고 OK를 확인한다. PowerShell에서는 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한다.
+- Claude와 Codex 리뷰는 전체 승인으로 실행한다. 파일 수정·생성·삭제와 재위임을 금지하며 셸·외부 도구에도 적용한다. Neovim 관리 보고는 MCP report로 보내고 OK를 확인한다. 전용 도구가 지원되지 않는 CLI 경로에서 report -를 사용할 때 PowerShell은 먼저 $OutputEncoding = [Text.UTF8Encoding]::new($false) 를 설정한다.
 - 에이전트 도구에 모델 지정이 지원되면 같은 등급 정책으로 명시한다. 지원되지 않는 모델 지정으로 실행하지 말고 지원되는 세션 위임 경로를 사용한다.
 - 계획 세션은 구현·리뷰를 Agent 도구(`implementer`·`reviewer` 등)로 대체하지 않고 handoff 세션을 연다. 계획 세션 안의 에이전트는 조사·설계 분석(`researcher`·`planner`·`planner-fallback`)에만 쓴다.
-- Neovim 결과 보고: `AgentReport({parent_server='...', parent_id=숫자, text='완료 범위 / 검증 결과 / 미해결 / 다음 판단'})`. 수신 실패 시 다시 보고하며 전송 성공 전 완료 종료하지 않는다.
-- Neovim 사용자 검토 표시: `AgentPlanPreview({path='프로젝트/docs/user-review/주제.md', owner=세션번호, task_id='작업 ID'})`. 기존 path 호출은 소유자가 유일하면 호환된다. CLI preview는 현재 세션·작업 ID를 전달하며 JSON 요청 파일도 받는다. 통합 화면은 현재 입력 포커스를 유지한 채 오른쪽에 표시한다. 단순 상태 갱신·완료 시 자동 호출 금지. 닫기는 승인 아님.
+- Neovim 결과 보고: `AgentReport({parent_server='...', parent_id=숫자, text='완료 범위 / 검증 결과 / 미해결 / 다음 판단'})`. 접수와 실행·부모 확인을 구분하며 응답 유실/unknown이면 자동 재전송하지 않는다. 부모 수신 확인 전 완료 종료하지 않는다.
+- Neovim 사용자 검토 표시: `AgentPlanPreview({path='프로젝트/docs/주제.md', owner=세션번호, task_id='작업 ID'})`. 기존 `docs/user-review/` 경로와 유일한 소유자의 path 호출도 호환한다. 명시적 preview만 등록하며 일반 문서 열기는 등록하지 않는다. CLI preview는 현재 세션·작업 ID를 전달하며 JSON 요청 파일도 받는다. 통합 화면은 현재 입력 포커스를 유지한 채 오른쪽에 표시한다. 단순 상태 갱신·완료 시 자동 호출 금지. 닫기는 승인 아님.
 - 승인·수정 요청 후에도 검토 문서를 유지한다. 부모 검증과 별도 리뷰 후 `AgentTaskComplete({owner=자식번호, task_id='정확한 작업 ID', parent_id=부모번호, verified=true, reviewed=true})` 또는 같은 JSON의 `task-complete`로 해당 소유자의 문서만 목록에서 제거한다. 원본은 보존한다. 미승인·개정·수정 요청 중인 문서는 완료 확인을 거부한다. 보고/CLI Stop/프로세스 종료는 작업 완료가 아니다. 이 확인을 마친 뒤 필요하면 기존 AgentDone으로 자식을 닫는다. 재개 부모는 task-complete에서도 정확한 저장 세션의 역할·모델을 확인한다. 미확인은 기존 선택 UI에서 확인 후 재시도하며, 확인된 plan만 완료할 수 있다. work/review 또는 미확인 역할을 plan으로 가정하지 않는다.
 - CLI hooks는 실제 지원 이벤트만 상태로 전달하며 개인 hooks·notify는 보존한다. Codex는 `/hooks`에서 새 정의를 검토·신뢰하기 전 실행되지 않을 수 있다. 신뢰를 자동 설정하지 않는다. 미수신·미지원 상태는 확인 불가이며 `activity`로 현재 세션 상태를 명시할 수 있다. Claude StopFailure는 오류로 전달하며 Claude 중단에는 이번 어댑터에서 검증한 전용 이벤트가 없어 수동 상태가 필요하다. 알림/로그 출력의 무응답 시간을 중단으로 추정하지 않는다.
-- Neovim 세션 이름: `/rename 역할 | 작업 제목`. 초기 명명은 런처가 전달하며 재개 후 역할·주제가 바뀌면 갱신한다.
+- Neovim 초기 이름은 런처가 전달한다. Codex 관리 이름 변경은 thread metadata API를 사용하며 `/rename` 문자열을 모델 메시지로 보내지 않는다. Claude 실행 중 자동 이름 변경과 양쪽 TUI 자동 종료는 미지원으로 명시 실패하고 세션을 보존한다.
 
 
 ## Codex 앱 원격

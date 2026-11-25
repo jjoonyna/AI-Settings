@@ -5,6 +5,8 @@ vim.fn.mkdir(role_root .. '/bin', 'p')
 for _, file in ipairs(vim.fn.glob(config .. '/../scripts/runtime/*.mjs', false, true)) do
   vim.fn.writefile(vim.fn.readfile(file, 'b'), role_root .. '/bin/' .. vim.fn.fnamemodify(file, ':t'), 'b')
 end
+local rpc = config .. '/../scripts/runtime/session-connection-rpc.lua'
+vim.fn.writefile(vim.fn.readfile(rpc, 'b'), role_root .. '/bin/session-connection-rpc.lua', 'b')
 local P = require('config.agent.policy')
 P.installation = function() return { runtime = role_root, mode = 'both', models = config .. '/../runtime/models.json' } end
 local session_cli = role_root .. '/bin/session.mjs'
@@ -15,11 +17,13 @@ local H = require('config.agent.hub')
 H.setup()
 require('config.agent').setup()
 local W, T, R, A = require('config.agent.workspace'), require('config.agent.terminal'), require('config.agent.reviews'), require('config.agent.activity')
+-- Layout/lifecycle fixture uses a local dependency stub, never a public shell escape.
+require('config.agent.message_transport').prepare=function(opts)return {cmd=opts.cmd,role=opts.role,model=opts.model}end
 local original_tab = vim.api.nvim_get_current_tabpage()
 local original_buf = vim.api.nvim_get_current_buf()
 local root = vim.fn.tempname()
 vim.fn.mkdir(root .. '/docs/user-review', 'p')
-local p, q = root .. '/docs/user-review/first.md', root .. '/docs/user-review/second-document-with-a-long-title-for-wrapping.md'
+local p, q = root .. '/docs/first.md', root .. '/docs/user-review/second-document-with-a-long-title-for-wrapping.md'
 vim.fn.writefile({ '# First', 'A long paragraph to verify the document can wrap within a narrow pane.' }, p)
 vim.fn.writefile({ '# Second' }, q)
 local ok, failure = xpcall(function()
@@ -98,7 +102,8 @@ local ok, failure = xpcall(function()
     local result
     vim.system({ vim.fn.exepath('node'), session_cli, action, argument }, {
       text = true, env = { NVIM = vim.v.servername, AGENT_SESSION_ID = tostring(owner), AGENT_TASK_ID = e.task_id,
-        AGENT_EVENT_INSTANCE = H.id, AGENT_EVENT_TOKEN = e.event_token, AI_SETTINGS_HOME = role_root },
+        AGENT_EVENT_INSTANCE = H.id, AGENT_EVENT_TOKEN = e.event_token, AI_SETTINGS_HOME = role_root,
+        AGENT_SESSION_VENDOR = '', CODEX_THREAD_ID = '', CODEX_SESSION_ID = '', CLAUDE_SESSION_ID = '' },
     }, function(value) result = value end)
     assert(vim.wait(8000, function() return result ~= nil end, 10), 'CLI RPC timeout')
     assert(result.code == 0, (result.stdout or '') .. (result.stderr or ''))
@@ -108,6 +113,36 @@ local ok, failure = xpcall(function()
   assert(vim.fn.jobwait({ entry.chan, T.registry[b].chan }, 0)[1] == -1 and vim.fn.jobwait({ T.registry[b].chan }, 0)[1] == -1)
   local focus = vim.api.nvim_get_current_win()
   local preview = require('config.agent.plan_preview')
+  local outside = vim.fn.tempname() .. '/docs/other.md'
+  vim.fn.mkdir(vim.fn.fnamemodify(outside, ':h'), 'p'); vim.fn.writefile({'# outside'}, outside)
+  assert(preview.show({path=outside, owner=b, task_id=task}):match('^FAIL'), 'another project docs rejected')
+  assert(preview.show({path=p, owner=b, task_id='wrong'}):match('^FAIL'), 'wrong task rejected')
+  assert(preview.show({path=p, owner={}, task_id=task}):match('^FAIL'), 'invalid owner rejected')
+  assert(preview.show({path=p, owner=false, task_id=task}):match('^FAIL'), 'false owner rejected')
+  vim.fn.mkdir(root .. '/docs/tmp', 'p'); vim.fn.writefile({'# temporary'}, root .. '/docs/tmp/no.md')
+  vim.fn.writefile({'text'}, root .. '/docs/no.txt')
+  assert(preview.show({path=root .. '/docs/tmp/no.md', owner=b, task_id=task}):match('^FAIL'), 'nested temporary document rejected')
+  assert(preview.show({path=root .. '/docs/no.txt', owner=b, task_id=task}):match('^FAIL'), 'non-markdown rejected')
+  local link = root .. '/docs/escape.md'
+  local linked = vim.uv.fs_symlink(outside, link)
+  if linked then
+    assert(preview.show({path=link, owner=b, task_id=task}):match('^FAIL'), 'symlink escape rejected')
+  else
+    print('SKIP: file symlink creation unavailable')
+  end
+  local linked_root, destination = root .. '/linked-project', root .. '/outside-review'
+  vim.fn.mkdir(linked_root .. '/docs', 'p'); vim.fn.mkdir(destination, 'p')
+  vim.fn.writefile({'# escape'}, destination .. '/escape.md')
+  local junction = linked_root .. '/docs/user-review'
+  local made = vim.system({vim.fn.exepath('node'), '-e', "require('fs').symlinkSync(process.argv[1],process.argv[2],'junction')", destination, junction}):wait()
+  if made.code == 0 then
+    local old_cwd = T.registry[c].cwd; T.registry[c].cwd = linked_root
+    assert(preview.show({path=junction .. '/escape.md', owner=c, task_id=T.registry[c].task_id}):match('^FAIL'), 'directory junction escape rejected')
+    T.registry[c].cwd = old_cwd
+    assert(vim.uv.fs_rmdir(junction), 'remove test junction')
+  else
+    print('SKIP: directory junction creation unavailable')
+  end
   assert(preview.show({ path = p, owner = b, task_id = task }):match('^OK'))
   assert(cli('preview', p, b):match('^OK'), 'CLI preview passes exact environment owner/task')
   assert(vim.api.nvim_get_current_win() == focus, 'preview preserves focus')

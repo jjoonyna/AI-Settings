@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { mergeJson, mergeToml, unmergeHookConfig, tomlValues, stripManagedStopHooks, mergeHooks, mergePermissions } from './config-merge.mjs';
 import { commonEvents } from './runtime/session-events.mjs';
+import { terminalPath, safeTerminal, readTerminal, installTerminal, replaceTerminal } from './terminal-config.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = p => fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '');
@@ -65,16 +66,26 @@ export function install(options) {
     if (link) fs.unlinkSync(target);
     write(target, bytes); report.push('write: ' + target);
   }
-  function copyTree(source, target) {
+  function copyTree(source, target, preserveModified = false) {
     for (const item of fs.readdirSync(source, { withFileTypes: true })) {
       if (['.git', 'node_modules'].includes(item.name)) continue;
       const nvimSource = within(path.join(repo, 'nvim'), source);
       if (nvimSource && (['.tests', 'data', 'debug', '.repro'].includes(item.name) || /\.bak|\.log$/.test(item.name))) continue;
       const from = path.join(source, item.name), to = path.join(target, item.name);
       if (item.isSymbolicLink()) throw new Error('Source link requires review: ' + from);
-      if (item.isDirectory()) copyTree(from, to);
-      else if (item.isFile() && (!nvimSource || !item.name.endsWith('.tmpl')) && to !== path.join(nvim, 'lua/config/local.lua')) put(to, fs.readFileSync(from));
+      if (item.isDirectory()) copyTree(from, to, preserveModified);
+      else if (item.isFile() && (!nvimSource || !item.name.endsWith('.tmpl')) && to !== path.join(nvim, 'lua/config/local.lua')) {
+        if (preserveModified && keepModified(to)) continue;
+        put(to, fs.readFileSync(from));
+      }
     }
+  }
+  function keepModified(target) {
+    const expected = old.files?.[target];
+    if (!expected || !present(target) || (!fs.lstatSync(target).isSymbolicLink() && hash(fs.readFileSync(target)) === expected)) return false;
+    manifest.files[target] = expected;
+    report.push('keep locally modified: ' + target);
+    return true;
   }
   if (options.dryRun) return { mode, home, nvim, root, actions: ['copy managed files', 'merge local settings', 'install skills', 'preserve credentials/history'], dryRun: true };
   // Validate config syntax and ambiguous managed inline tables before writing anything.
@@ -106,10 +117,13 @@ export function install(options) {
       const lua = s => JSON.stringify(s || '').replace(/\\u([0-9a-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
       put(localPath, `return { jdk21 = ${lua(options.jdk)}, python = ${lua(options.python)}, projects = { rbm = { root = ${lua(options.rbm)}, kind = "java" }, docs = { root = ${lua(options.docs)}, kind = "docs" } } }\n`);
     }
-    const metadata = { version: 2, mode, runtime: root, models: path.join(root, 'models.json') };
+    const previousMetadata=present(path.join(root,'install.json'))?json(path.join(root,'install.json')):{};
+    const metadata = { version: 2, mode, runtime: root, models: path.join(root, 'models.json'),
+      ...((options.skipTools||options.skipToolDependencies)&&typeof previousMetadata.python==='string'&&within(path.join(root,'python'),previousMetadata.python)&&present(previousMetadata.python)?{python:previousMetadata.python}:{}) };
     put(path.join(nvim, 'ai-settings.json'), JSON.stringify(metadata, null, 2));
     copyTree(path.join(repo, 'runtime'), root);
     copyTree(path.join(repo, 'scripts/runtime'), path.join(root, 'bin'));
+    put(path.join(root, 'bin/terminal-config.mjs'), fs.readFileSync(path.join(repo, 'scripts/terminal-config.mjs')));
     put(path.join(root, 'bin/config-merge.mjs'), fs.readFileSync(path.join(repo, 'scripts/config-merge.mjs')));
     put(path.join(root, 'install.json'), JSON.stringify(metadata, null, 2));
     const policy = read(path.join(repo, 'runtime/POLICY.md'));
@@ -140,6 +154,9 @@ export function install(options) {
     const status = ['model-with-reasoning', 'five-hour-limit', 'weekly-limit', 'context-used', 'current-dir', 'git-branch'];
     const codexConfig = path.join(codexHome, 'config.toml');
     const managed = { approval_policy: '"on-request"', approvals_reviewer: '"auto_review"', model: JSON.stringify(catalog.defaults.codex), model_reasoning_effort: '"medium"', 'tui.status_line': JSON.stringify(status), 'windows.sandbox': '"elevated"' };
+    managed['mcp_servers.ai_settings_sessions.command'] = JSON.stringify(process.execPath);
+    managed['mcp_servers.ai_settings_sessions.args'] = JSON.stringify([path.join(root, 'bin/session-tools.mjs')]);
+    managed['mcp_servers.ai_settings_sessions.env_vars'] = JSON.stringify(['NVIM','AI_SETTINGS_HOME','AGENT_HUB_HOME','AGENT_EVENT_INSTANCE','AGENT_SESSION_ID','AGENT_TASK_ID','AGENT_SESSION_VENDOR','CODEX_THREAD_ID','CODEX_SESSION_ID','CODEX_HOME']);
     for (const role of ['plan', 'work', 'review', 'research', 'build', 'deep-review', 'plan-fallback']) {
       managed[`profiles.${role}.approval_policy`] = null;
       managed[`profiles.${role}.approvals_reviewer`] = null;
@@ -172,6 +189,7 @@ export function install(options) {
     // Both tools receive the project-initialization and session workflow skills.
     const toolHomes = [codexHome];
     if (mode === 'both') toolHomes.push(path.join(home, '.claude'));
+    if (mode === 'both') put(path.join(root,'claude-mcp.json'),JSON.stringify({mcpServers:{ai_settings_sessions:{command:process.execPath,args:[path.join(root,'bin/session-tools.mjs')]}}},null,2)+'\n');
     for (const toolHome of toolHomes) {
       copyTree(path.join(repo, 'claude/skills/agent-init'), path.join(toolHome, 'skills/agent-init'));
       copyTree(path.join(repo, 'runtime/skills'), path.join(toolHome, 'skills'));
@@ -261,11 +279,22 @@ export function install(options) {
       for (const toolHome of toolHomes) {
         for (const [name, skill] of skills) {
           const target = path.join(toolHome, 'skills', name);
-          copyTree(path.join(checkout, skill), target);
-          for (const license of ['LICENSE', 'LICENSE.txt', 'NOTICE', 'NOTICE.md']) if (present(path.join(checkout, license))) put(path.join(target, license), fs.readFileSync(path.join(checkout, license)));
+          copyTree(path.join(checkout, skill), target, !!source.bundle);
+          for (const license of ['LICENSE', 'LICENSE.txt', 'NOTICE', 'NOTICE.md']) if (present(path.join(checkout, license)) && (!source.bundle || !keepModified(path.join(target, license)))) put(path.join(target, license), fs.readFileSync(path.join(checkout, license)));
         }
       }
       manifest.tools ||= {}; manifest.tools[source.name] = { commit: commit.stdout.trim(), source: source.url, ...(source.bundle ? { skills: skills.map(([name]) => name) } : {}) };
+    }
+    const overlays = path.join(repo, 'runtime/superpowers-overlay');
+    const pinnedSuperpowers = json(path.join(repo, 'runtime/tool-sources.json')).find(source => source.name === 'superpowers')?.commit;
+    if (present(overlays) && pinnedSuperpowers && manifest.tools?.superpowers?.commit === pinnedSuperpowers) for (const name of fs.readdirSync(overlays)) {
+      if (!manifest.tools?.superpowers?.skills?.includes(name)) continue;
+      for (const toolHome of toolHomes) {
+        const target = path.join(toolHome, 'skills', name, 'SKILL.md');
+        const expected = manifest.files[target];
+        if (!expected || !present(target) || fs.lstatSync(target).isSymbolicLink() || hash(fs.readFileSync(target)) !== expected) continue;
+        put(target, fs.readFileSync(path.join(overlays, name, 'SKILL.md')));
+      }
     }
     if (!options.skipTools && !options.skipToolDependencies) {
       if (!options.python || !present(options.python)) throw new Error('Python 3.11+ is required. Install Python or pass -Python <python.exe>.');
@@ -282,6 +311,20 @@ export function install(options) {
       put(path.join(root, 'install.json'), JSON.stringify(metadata, null, 2));
       put(path.join(nvim, 'ai-settings.json'), JSON.stringify(metadata, null, 2));
     }
+    // Terminal settings are owned by key, not as an entire file.
+    const terminal = terminalPath(home);
+    if (old.terminal) manifest.terminal = old.terminal;
+    let terminalBefore, terminalMerged;
+    try {
+      safeTerminal(terminal, home);
+      if (present(terminal)) {
+        terminalBefore = readTerminal(terminal);
+        terminalMerged = installTerminal(terminalBefore, old.terminal?.metadata);
+      } else report.push('Terminal settings unchanged: settings file not found');
+    } catch (error) { report.push('Terminal settings unchanged: ' + error.message); }
+    if (terminalMerged) {
+      manifest.terminal = { path: terminal, metadata: terminalMerged.metadata };
+    }
     // Remove only obsolete, unchanged owned files; personal edits are retained.
     for (const [target, expected] of Object.entries(old.files || {})) {
       if (Object.hasOwn(manifest.files, target) || !valid(target) || !present(target)) continue;
@@ -295,7 +338,15 @@ export function install(options) {
     const previousManifest = present(manifestPath) ? fs.readFileSync(manifestPath) : null;
     undo.push(() => { if (previousManifest) write(manifestPath, previousManifest); else fs.rmSync(manifestPath, { force: true }); });
     write(manifestPath, JSON.stringify(manifest, null, 2));
-    if (present(legacyPath)) fs.renameSync(legacyPath, path.join(backup, 'legacy-manifest.json'));
+    if (present(legacyPath)) {
+      const savedLegacy = path.join(backup, 'legacy-manifest.json');
+      fs.renameSync(legacyPath, savedLegacy);
+      undo.push(() => fs.renameSync(savedLegacy, legacyPath));
+    }
+    if (terminalMerged && terminalBefore !== terminalMerged.text) {
+      const outcome = replaceTerminal(terminal, home, terminalBefore, terminalMerged.text);
+      if (outcome.warning) report.push(outcome.warning);
+    }
     return { mode, root, nvim, backup, report, toolsSkipped: !!options.skipTools };
   } catch (error) {
     for (const restore of undo.reverse()) { try { restore(); } catch (why) { console.error('Rollback requires attention:', why.message); } }
@@ -310,7 +361,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (result.report) {
       write(path.join(result.backup, 'report.json'), JSON.stringify(result.report, null, 2));
       const { report, ...summary } = result;
-      console.log(JSON.stringify({ ...summary, changed: report.length, report: path.join(result.backup, 'report.json') }, null, 2));
+      console.log(JSON.stringify({ ...summary, changed: report.length, warnings: report.filter(line => line.startsWith('Terminal ')), report: path.join(result.backup, 'report.json') }, null, 2));
     } else console.log(JSON.stringify(result, null, 2));
   }
   catch (error) { console.error(error.stack); process.exitCode = 1; }

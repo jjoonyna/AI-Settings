@@ -11,12 +11,14 @@ function M.install(T)
     if type(name) ~= 'string' then return false, '작업 이름을 입력하세요' end
     name = vim.trim(name)
     if name == '' or name:find('[%c]') then return false, '이름은 공백만 있거나 제어 문자를 포함할 수 없습니다' end
-    entry.name = name
-    vim.b[entry.buf].agent_name = name
-    if vim.api.nvim_get_current_buf() == entry.buf then vim.opt.title = true; vim.opt.titlestring = name:gsub('%%', '%%%%') end
-    hub.publish()
-    vim.cmd('redrawstatus')
-    return true
+    local task,cli=entry.task_id,entry.cli_session
+    local accepted,why=require('config.agent.message_transport').rename(entry,name,function(result)
+      if result.state~='accepted' or T.registry[id]~=entry or entry.task_id~=task or entry.cli_session~=cli or not vim.api.nvim_buf_is_valid(entry.buf) then return end
+      entry.name=name;vim.b[entry.buf].agent_name=name
+      if vim.api.nvim_get_current_buf()==entry.buf then vim.opt.title=true;vim.opt.titlestring=name:gsub('%%','%%%%') end
+      hub.publish();vim.cmd('redrawstatus')
+    end)
+    return accepted,why
   end
   function T.spawn(opts)
     local copy = vim.tbl_extend('force', {}, opts)
@@ -25,10 +27,7 @@ function M.install(T)
       cwd = opts.cwd, task_id = opts.task_id }
     hub.note(descriptor)
     copy.env.AGENT_TASK_ID = descriptor.task_id
-    if opts.initial_prompt then
-      copy.cmd = vim.deepcopy(opts.cmd)
-      copy.cmd[#copy.cmd + 1] = opts.initial_prompt(descriptor)
-    end
+    if opts.initial_prompt then copy.briefing=opts.initial_prompt(descriptor) end
     local id, err = original_spawn(copy)
     if not id then
       vim.fn.writefile({ '# 실행 실패', '', tostring(err) }, descriptor.note)
@@ -38,14 +37,7 @@ function M.install(T)
     entry.task_id, entry.note = descriptor.task_id, descriptor.note
     if opts.name then entry.name = opts.name; vim.b[entry.buf].agent_name = opts.name end
     if opts.name then vim.opt.title = true; vim.opt.titlestring = opts.name:gsub('%%', '%%%%') end
-    if opts.session_name then
-      local pattern = opts.agent == 'Codex' and '›' or '❯'
-      T.wait_ready(id, { pattern = pattern }, function(ready)
-        if not ready then return end
-        T.send(id, '/rename ' .. opts.session_name, { prompt = pattern })
-        if opts.briefing then vim.defer_fn(function() T.send(id, opts.briefing, { prompt = pattern }) end, 2500) end
-      end)
-    end
+    require('config.agent.message_transport').startup(entry, copy.briefing, opts.session_name)
     hub.publish()
     return id
   end

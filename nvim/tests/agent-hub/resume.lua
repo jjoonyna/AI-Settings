@@ -64,7 +64,7 @@ P.catalog = function() return { defaults = { codex = 'gpt-6.1-sol' }, models = {
   { id = 'gpt-6.1-sol', vendor = 'codex', tier = 3, label = 'Sol' },
   { id = 'gpt-6-luna', vendor = 'codex', tier = 1, label = 'Luna' } } } end
 P.command = function() return { vim.fn.exepath('node') } end
-terminal.spawn = function(opts) captured = opts; return 10 end
+terminal.spawn = function(opts) captured = opts; terminal.registry[10] = { id = 10, task_id = opts.task_id or hub.uid() }; return 10 end
 if vim.v.servername == '' then vim.fn.serverstart() end
 local doc = vim.fn.tempname(); vim.fn.writefile({ 'spec' }, doc)
 terminal.registry[999] = { id = 999, agent = 'Codex', resume = 'resume' }
